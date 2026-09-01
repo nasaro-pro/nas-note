@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>nas-note — 디자인 목업</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <style>
+    :root {
+      --bg: #F4F1EA;
+      --bg-elevated: #FFFcf7;
+      --bg-muted: #EBE6DC;
+      --ink: #1C1915;
+      --ink-2: #5C574F;
+      --ink-3: #8A847A;
+      --line: #DDD6C8;
+      --line-strong: #C9C0B0;
+      --accent: #C45C26;
+      --accent-hover: #A84B1C;
+      --accent-soft: #F3E2D6;
+      --success: #2F6B4F;
+      --success-soft: #DCE8E1;
+      --danger: #B42318;
+      --danger-soft: #F8E2DF;
+      --info: #2C5F8A;
+      --info-soft: #DCE7F0;
+      --warning: #9A6700;
+      --warning-soft: #F5EBD3;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: Pretendard, system-ui, sans-serif;
+      background: #E4DFD4;
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 24px;
+    }
+    .proto-bar {
+      position: sticky; top: 0; z-index: 20;
+      background: #1C1915; color: #F4F1EA;
+      padding: 10px 20px;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .proto-bar strong { font-size: 13px; font-weight: 600; margin-right: 8px; }
+    .proto-bar button {
+      font: 600 12px/1 Pretendard, sans-serif;
+      border: 1px solid #4A453C; background: transparent; color: #F4F1EA;
+      padding: 6px 10px; border-radius: 4px; cursor: pointer;
+    }
+    .proto-bar button[aria-pressed="true"] {
+      background: var(--accent); border-color: var(--accent); color: #fff;
+    }
+    .app {
+      max-width: 1280px; margin: 16px auto 48px;
+      background: var(--bg);
+      min-height: 820px;
+      border: 1px solid var(--line-strong);
+    }
+    .topbar {
+      height: 56px; background: var(--bg-elevated);
+      border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; padding: 0 32px; gap: 16px;
+    }
+    .wordmark {
+      font-weight: 600; font-size: 15px; color: var(--ink);
+      text-decoration: none; white-space: nowrap;
+    }
+    .spacer { flex: 1; }
+    .search {
+      width: 280px; height: 36px; display: flex; align-items: center; gap: 8px;
+      border: 1px solid var(--line); background: var(--bg);
+      border-radius: 6px; padding: 0 10px; color: var(--ink-3); font-size: 13px;
+    }
+    .btn {
+      height: 36px; padding: 0 14px; border-radius: 6px; border: none;
+      font: 600 14px/20px Pretendard, sans-serif; cursor: pointer;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: transparent; color: var(--ink); border: 1px solid var(--line-strong); }
+    .btn-ghost { background: transparent; color: var(--ink-2); }
+    .content { width: min(1080px, calc(100% - 64px)); margin: 0 auto; padding: 32px 0 48px; }
+    .display { font-size: 28px; line-height: 36px; font-weight: 650; margin: 0 0 8px; }
+    .sub { color: var(--ink-2); margin: 0 0 32px; }
+    .caption { font-size: 13px; line-height: 20px; color: var(--ink-2); }
+    .overline {
+      font-size: 11px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em;
+      color: var(--ink-3); margin: 0 0 8px;
+    }
+    .empty {
+      text-align: center; padding: 64px 24px;
+      background: var(--bg-elevated); border: 1px solid var(--line); border-radius: 8px;
+    }
+    .empty h2 { font-size: 20px; margin: 16px 0 8px; font-weight: 600; }
+    .empty p { color: var(--ink-2); margin: 0 0 24px; }
+    .card {
+      background: var(--bg-elevated); border: 1px solid var(--line); border-radius: 8px;
+    }
+    .row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px; height: 72px; cursor: pointer;
+    }
+    .row + .row { border-top: 1px solid var(--line); }
+    .row:hover { background: var(--bg-muted); }
+    .row h3 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
+    .meta { font-size: 13px; color: var(--ink-2); }
+    .mono { font-family: ui-monospace, "Cascadia Mono", Menlo, monospace; }
+    .badge {
+      display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+      border-radius: 4px; font-size: 12px; font-weight: 600;
+    }
+    .b-done { background: var(--success-soft); color: var(--success); }
+    .b-run { background: var(--info-soft); color: var(--info); }
+    .b-fail { background: var(--danger-soft); color: var(--danger); }
+    .b-wait { background: var(--bg-muted); color: var(--ink-2); }
+    .b-ana { background: var(--warning-soft); color: var(--warning); }
+    .drop {
+      height: 240px; border: 2px dashed var(--line-strong); border-radius: 8px;
+      background: var(--bg-elevated); display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 8px; margin-bottom: 24px;
+    }
+    .field { max-width: 560px; }
+    .field label { display: block; font-weight: 600; margin-bottom: 8px; }
+    .field input {
+      width: 100%; height: 40px; border: 1px solid var(--line); border-radius: 6px;
+      padding: 0 12px; font: 400 15px Pretendard; background: var(--bg-elevated); color: var(--ink);
+    }
+    .banner {
+      border-radius: 8px; padding: 14px 16px; margin-bottom: 24px;
+      border-left: 3px solid var(--danger); background: var(--danger-soft);
+    }
+    .banner.warn { border-left-color: var(--warning); background: var(--warning-soft); }
+    .banner.info { border-left-color: var(--info); background: var(--info-soft); }
+    .bar-track { height: 4px; background: var(--bg-muted); border-radius: 2px; flex: 1; }
+    .bar-fill { height: 4px; background: var(--accent); border-radius: 2px; }
+    .part {
+      display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .part:last-child { border-bottom: none; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .part.active { background: var(--accent-soft); }
+    .tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--line); margin: 24px 0 0; }
+    .tab {
+      height: 40px; background: none; border: none; font: 600 14px Pretendard;
+      color: var(--ink-3); cursor: pointer; padding: 0; border-bottom: 2px solid transparent;
+    }
+    .tab.on { color: var(--ink); border-bottom-color: var(--accent); }
+    .paper {
+      background: var(--bg-elevated); border: 1px solid var(--line); border-radius: 8px;
+      padding: 28px 32px; margin-top: 24px;
+    }
+    .transcript {
+      max-width: 720px; font-size: 16px; line-height: 28px; white-space: pre-wrap; margin: 0;
+    }
+    .speaker { font-weight: 600; }
+    .section { padding: 24px 0; border-top: 1px solid var(--line); }
+    .section:first-of-type { border-top: none; padding-top: 8px; }
+    .section ul { margin: 8px 0 0; padding: 0; list-style: none; }
+    .section li { padding-left: 16px; position: relative; margin-bottom: 8px; }
+    .section li::before {
+      content: ""; position: absolute; left: 0; top: 9px;
+      width: 6px; height: 6px; background: var(--accent);
+    }
+    .hit { background: var(--accent-soft); }
+    .head-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .icon { width: 32px; height: 32px; color: var(--ink-3); }
+    .icon-sm { width: 16px; height: 16px; }
+    .pulse { animation: pulse 1.2s ease infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .hint { color: var(--ink-3); font-size: 13px; margin-top: 16px; }
+    .date-label {
+      font-size: 13px; font-weight: 600; color: var(--ink-2);
+      margin: 28px 0 10px;
+    }
+    .date-label:first-of-type { margin-top: 0; }
+    .screen.on { display: block; }
+    .file-card {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 20px; margin-bottom: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="proto-bar">
+    <strong>디자인 목업</strong>
+    <button type="button" data-screen="home-empty" aria-pressed="true">홈 · 빈 화면</button>
+    <button type="button" data-screen="home-list">홈 · 목록</button>
+    <button type="button" data-screen="upload">업로드</button>
+    <button type="button" data-screen="processing">처리 중</button>
+    <button type="button" data-screen="failed">실패</button>
+    <button type="button" data-screen="result-text">결과 · 텍스트</button>
+    <button type="button" data-screen="result-analysis">결과 · 분석</button>
+    <button type="button" data-screen="search">검색</button>
+  </div>
+
+  <div class="app">
+    <!-- HOME EMPTY -->
+    <section class="screen on" id="home-empty">
+      <header class="topbar">
+        <a class="wordmark" href="#">nas-note</a>
+        <span class="spacer"></span>
+        <div class="search">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg>
+          프로젝트 · 텍스트 · 요약 검색
+        </div>
+        <button class="btn btn-primary" type="button" data-screen="upload">새 분석</button>
+      </header>
+      <div class="content">
+        <h1 class="display">nas-note</h1>
+        <p class="sub">긴 녹음을 올리면 텍스트와 요약까지 자동으로 끝납니다.</p>
+        <div class="empty">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 6a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6z"/><path d="M13 4v5h5"/><path d="M8 15h8M8 11h3"/></svg>
+          <h2>아직 분석한 녹음이 없습니다</h2>
+          <p>3~4시간 파일이어도 업로드하면 분할, 전사, 요약까지 자동으로 진행됩니다.</p>
+          <button class="btn btn-primary" type="button" data-screen="upload">첫 녹음 올리기</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- HOME LIST -->
+    <section class="screen" id="home-list">
+      <header class="topbar">
+        <a class="wordmark" href="#">nas-note</a>
+        <span class="spacer"></span>
+        <div class="search">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg>
+          프로젝트 · 텍스트 · 요약 검색
+        </div>
+        <button class="btn btn-primary" type="button" data-screen="upload">새 분석</button>
+      </header>
+      <div class="content">
+        <div class="head-row">
+          <div>
+            <h1 class="display">nas-note</h1>
+            <p class="sub">긴 녹음을 올리면 텍스트와 요약까지 자동으로 끝납니다.</p>
+          </div>
+          <p class="caption">3개 프로젝트</p>
+        </div>
+        <p class="date-label">2026년 9월 1일</p>
+        <div class="card">
+          <div class="row" data-screen="processing">
+            <div>
+              <h3>주간 스프린트 회의</h3>
+              <div class="meta">sprint.m4a  ·  186 MB</div>
+            </div>
+            <div style="text-align:right">
+              <div class="mono caption">Part 4/11</div>
+              <span class="badge b-run">전사 중</span>
+            </div>
+          </div>
+        </div>
+        <p class="date-label">2026년 8월 28일</p>
+        <div class="card">
+          <div class="row" data-screen="result-text">
+            <div>
+              <h3>고객사 킥오프</h3>
+              <div class="meta">kickoff.mp3  ·  412 MB</div>
+            </div>
+            <div style="text-align:right">
+              <div class="mono caption">3시간 12분</div>
+              <span class="badge b-done">완료</span>
+            </div>
+          </div>
+        </div>
+        <p class="date-label">2026년 8월 21일</p>
+        <div class="card">
+          <div class="row" data-screen="failed">
+            <div>
+              <h3>인터뷰 초안</h3>
+              <div class="meta">interview.wav  ·  98 MB</div>
+            </div>
+            <div style="text-align:right">
+              <div class="mono caption">1시간 4분</div>
+              <span class="badge b-fail">실패</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- UPLOAD -->
+    <section class="screen" id="upload">
+      <header class="topbar">
+        <button class="btn btn-ghost" type="button" data-screen="home-list">목록으로</button>
+        <a class="wordmark" href="#">nas-note</a>
+      </header>
+      <div class="content">
+        <h1 class="display">새 분석</h1>
+        <p class="sub">MP3, WAV, M4A, MP4. 업로드 이후 개입 없이 끝까지 진행합니다.</p>
+        <div class="drop">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          <div>파일을 여기에 놓거나 클릭해서 선택</div>
+          <div class="caption">최대 용량 제한 없음. 24MB 넘으면 자동 분할.</div>
+        </div>
+        <div class="card file-card">
+          <div>
+            <strong>sprint-2026-09-01.m4a</strong>
+            <div class="caption">186.4 MB</div>
+          </div>
+          <button class="btn btn-ghost" type="button">다른 파일</button>
+        </div>
+        <div class="field">
+          <label for="title">프로젝트 제목</label>
+          <input id="title" value="주간 스프린트 회의" />
+        </div>
+        <div style="margin-top:24px">
+          <button class="btn btn-primary" type="button" data-screen="processing">분석 시작</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROCESSING -->
+    <section class="screen" id="processing">
+      <header class="topbar">
+        <button class="btn btn-ghost" type="button" data-screen="home-list">목록으로</button>
+        <a class="wordmark" href="#">nas-note</a>
+      </header>
+      <div class="content">
+        <h1 class="display">주간 스프린트 회의</h1>
+        <p class="sub">조각을 순서대로 텍스트로 옮기고 있습니다.</p>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+          <div class="bar-track"><div class="bar-fill" style="width:42%"></div></div>
+          <span class="mono caption">42%</span>
+        </div>
+        <div class="card">
+          <div class="part"><span class="dot" style="background:var(--success)"></span><div style="flex:1"><strong>Part 01</strong><div class="caption">23.1 MB</div></div><span class="caption">완료</span></div>
+          <div class="part"><span class="dot" style="background:var(--success)"></span><div style="flex:1"><strong>Part 02</strong><div class="caption">22.8 MB</div></div><span class="caption">완료</span></div>
+          <div class="part"><span class="dot" style="background:var(--success)"></span><div style="flex:1"><strong>Part 03</strong><div class="caption">23.4 MB</div></div><span class="caption">완료</span></div>
+          <div class="part active"><span class="dot pulse" style="background:var(--accent)"></span><div style="flex:1"><strong>Part 04</strong><div class="caption">22.9 MB</div></div><span class="caption">처리 중</span></div>
+          <div class="part"><span class="dot" style="background:var(--line-strong)"></span><div style="flex:1"><strong>Part 05</strong><div class="caption">23.0 MB</div></div><span class="caption">대기</span></div>
+          <div class="part"><span class="dot" style="background:var(--line-strong)"></span><div style="flex:1"><strong>Part 11</strong><div class="caption">18.2 MB</div></div><span class="caption">대기</span></div>
+        </div>
+        <p class="hint">이 창을 닫아도 처리는 계속됩니다.</p>
+      </div>
+    </section>
+
+    <!-- FAILED -->
+    <section class="screen" id="failed">
+      <header class="topbar">
+        <button class="btn btn-ghost" type="button" data-screen="home-list">목록으로</button>
+        <a class="wordmark" href="#">nas-note</a>
+      </header>
+      <div class="content">
+        <h1 class="display">인터뷰 초안</h1>
+        <p class="sub">Part 0004 전사에 실패했습니다.</p>
+        <div class="banner">Part 0004 전사에 실패했습니다. 이미 끝난 조각은 그대로 두고 이어서 재시도할 수 있습니다.</div>
+        <div class="card" style="margin-bottom:24px">
+          <div class="part"><span class="dot" style="background:var(--success)"></span><div style="flex:1"><strong>Part 03</strong></div><span class="caption">완료</span></div>
+          <div class="part"><span class="dot" style="background:var(--danger)"></span><div style="flex:1"><strong>Part 04</strong></div><span class="caption">실패</span></div>
+          <div class="part"><span class="dot" style="background:var(--line-strong)"></span><div style="flex:1"><strong>Part 05</strong></div><span class="caption">대기</span></div>
+        </div>
+        <button class="btn btn-primary" type="button" data-screen="processing">이어서 재시도</button>
+      </div>
+    </section>
+
+    <!-- RESULT TEXT -->
+    <section class="screen" id="result-text">
+      <header class="topbar">
+        <a class="wordmark" href="#">nas-note</a>
+        <span class="spacer"></span>
+        <div class="search">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg>
+          프로젝트 · 텍스트 · 요약 검색
+        </div>
+        <button class="btn btn-primary" type="button" data-screen="upload">새 분석</button>
+      </header>
+      <div class="content">
+        <div class="head-row">
+          <div>
+            <h1 class="display">고객사 킥오프</h1>
+            <p class="caption">2026.08.28  ·  3시간 12분  ·  kickoff.mp3</p>
+          </div>
+          <div>
+            <span class="badge b-done">완료</span>
+            <button class="btn btn-secondary" type="button" style="margin-left:8px">복사</button>
+          </div>
+        </div>
+        <div class="tabs">
+          <button class="tab on" type="button">전체 텍스트</button>
+          <button class="tab" type="button" data-screen="result-analysis">AI 분석</button>
+        </div>
+        <div class="paper">
+          <p class="transcript"><span class="speaker">화자 1:</span> 오늘은 킥오프니까 범위부터 맞추고 가시죠. 1차 오픈은 10월 첫째 주입니다.
+
+<span class="speaker">화자 2:</span> 알겠습니다. 디자인 시안은 금요일까지 드리고, API 스펙은 다음 주 화요일입니다.
+
+<span class="speaker">화자 1:</span> 배포 일정은 금요일로 확정하고 슬랙에 공지합시다. 예산은 이번 분기 4,200만 원 한도입니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- RESULT ANALYSIS -->
+    <section class="screen" id="result-analysis">
+      <header class="topbar">
+        <a class="wordmark" href="#">nas-note</a>
+        <span class="spacer"></span>
+        <div class="search">프로젝트 · 텍스트 · 요약 검색</div>
+        <button class="btn btn-primary" type="button" data-screen="upload">새 분석</button>
+      </header>
+      <div class="content">
+        <div class="head-row">
+          <div>
+            <h1 class="display">고객사 킥오프</h1>
+            <p class="caption">2026.08.28  ·  3시간 12분  ·  kickoff.mp3</p>
+          </div>
+          <span class="badge b-done">완료</span>
+        </div>
+        <div class="tabs">
+          <button class="tab" type="button" data-screen="result-text">전체 텍스트</button>
+          <button class="tab on" type="button">AI 분석</button>
+        </div>
+        <div class="section">
+          <p class="overline">전체 요약</p>
+          <p>킥오프에서 1차 오픈을 10월 첫째 주로 맞추고, 디자인·API·배포 일정을 확정했다. 예산 한도는 이번 분기 4,200만 원이다.</p>
+        </div>
+        <div class="section">
+          <p class="overline">핵심 내용</p>
+          <ul>
+            <li>1차 오픈 시점: 10월 첫째 주</li>
+            <li>디자인 시안 금요일, API 스펙 다음 주 화요일</li>
+            <li>분기 예산 4,200만 원</li>
+          </ul>
+        </div>
+        <div class="section">
+          <p class="overline">상세 요약</p>
+          <p>범위 합의 후 일정과 예산을 차례로 고정했다. 디자인과 API가 선행되고, 배포 공지는 금요일 슬랙으로 나가기로 했다.</p>
+        </div>
+        <div class="section">
+          <p class="overline">결정 사항</p>
+          <ul>
+            <li>1차 오픈은 10월 첫째 주</li>
+            <li>배포 일정은 금요일 확정</li>
+          </ul>
+        </div>
+        <div class="section">
+          <p class="overline">할 일</p>
+          <ul>
+            <li>배포 일정을 금요일로 확정하고 슬랙에 공지한다.</li>
+            <li>디자인 시안을 금요일까지 전달한다.</li>
+            <li>API 스펙을 다음 주 화요일까지 공유한다.</li>
+          </ul>
+        </div>
+        <div class="section">
+          <p class="overline">중요 내용</p>
+          <ul>
+            <li>분기 예산 한도 4,200만 원</li>
+            <li>1차 오픈 10월 첫째 주</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEARCH -->
+    <section class="screen" id="search">
+      <header class="topbar">
+        <a class="wordmark" href="#">nas-note</a>
+        <span class="spacer"></span>
+        <div class="search">배포 일정</div>
+        <button class="btn btn-primary" type="button" data-screen="upload">새 분석</button>
+      </header>
+      <div class="content">
+        <h1 class="display">‘배포 일정’ 검색 결과</h1>
+        <p class="sub">2건</p>
+        <div class="card">
+          <div class="row" data-screen="result-text">
+            <div>
+              <h3>고객사 킥오프</h3>
+              <div class="meta">원문  ·  ...<span class="hit">배포 일정</span>은 금요일로 확정하고 슬랙에 공지합시다...</div>
+            </div>
+            <span class="badge b-done">완료</span>
+          </div>
+          <div class="row" data-screen="result-analysis">
+            <div>
+              <h3>고객사 킥오프</h3>
+              <div class="meta">분석  ·  ...<span class="hit">배포 일정</span>은 금요일 확정...</div>
+            </div>
+            <span class="badge b-done">완료</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const buttons = document.querySelectorAll("[data-screen]");
+    const screens = document.querySelectorAll(".screen");
+    const proto = document.querySelectorAll(".proto-bar [data-screen]");
+    function show(id) {
+      screens.forEach((s) => s.classList.toggle("on", s.id === id));
+      proto.forEach((b) => b.setAttribute("aria-pressed", b.getAttribute("data-screen") === id ? "true" : "false"));
+      window.scrollTo(0, 0);
+    }
+    buttons.forEach((b) => {
+      b.addEventListener("click", () => {
+        const id = b.getAttribute("data-screen");
+        if (id) show(id);
+      });
+    });
+  </script>
+</body>
+</html>
