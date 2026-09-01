@@ -64,6 +64,119 @@ export function formatDateTime(iso?: string): string {
   return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 ${formatTime(iso)}`;
 }
 
+export function unescapeGemini(text: string | null | undefined): string {
+  let cur = text ?? "";
+  for (let i = 0; i < 4; i += 1) {
+    const next = cur.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+    if (next === cur) break;
+    cur = next;
+  }
+  return cur.replace(/\\"/g, '"');
+}
+
+export function asItems(value: string | string[] | null | undefined): string[] {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => asItems(item)).filter((item) => item && item !== "없음");
+  }
+  const text = unescapeGemini(String(value)).trim();
+  if (!text || text === "없음") return [];
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (Array.isArray(parsed)) return asItems(parsed as string[]);
+    if (typeof parsed === "string") return asItems(parsed);
+  } catch {
+    /* plain text */
+  }
+  return text
+    .split(/\n+/)
+    .map((line) => line.replace(/^[-•*]\s+/, "").replace(/^\d+[.)]\s+/, "").trim())
+    .filter((line) => line && line !== "없음");
+}
+
+const SECTION_KEYS: Record<string, "overall_summary" | "extracted_info" | "detailed_summary" | "key_points" | "decisions" | "todos" | "important"> = {
+  총정리: "overall_summary",
+  "정보 추가": "extracted_info",
+  정보추가: "extracted_info",
+  "요약 정리": "detailed_summary",
+  요약정리: "detailed_summary",
+  "핵심 내용": "key_points",
+  핵심내용: "key_points",
+  "결정 사항": "decisions",
+  결정사항: "decisions",
+  "할 일": "todos",
+  할일: "todos",
+  "중요 내용": "important",
+  중요내용: "important",
+};
+
+export function parseAnalysisDump(text: string): {
+  overall_summary: string;
+  extracted_info: string[];
+  detailed_summary: string;
+  key_points: string[];
+  decisions: string[];
+  todos: string[];
+  important: string[];
+} {
+  const empty = {
+    overall_summary: "",
+    extracted_info: [] as string[],
+    detailed_summary: "",
+    key_points: [] as string[],
+    decisions: [] as string[],
+    todos: [] as string[],
+    important: [] as string[],
+  };
+  const raw = unescapeGemini(text).replace(/\r\n/g, "\n");
+  const parts = raw.split(/【([^】]+)】/);
+  if (parts.length < 3) return empty;
+  for (let i = 1; i + 1 < parts.length; i += 2) {
+    const key = SECTION_KEYS[parts[i].trim()];
+    const body = parts[i + 1].trim();
+    if (!key) continue;
+    if (key === "overall_summary" || key === "detailed_summary") {
+      empty[key] = body === "없음" ? "" : body;
+    } else {
+      empty[key] = body === "없음" ? [] : asItems(body);
+    }
+  }
+  return empty;
+}
+
+export function hydrateAnalysis(
+  analysis: {
+    overall_summary: string;
+    extracted_info?: string[];
+    key_points: string[];
+    detailed_summary: string;
+    decisions: string[];
+    todos: string[];
+    important: string[];
+  } | null | undefined,
+  dump?: string,
+) {
+  const parsed = dump ? parseAnalysisDump(dump) : null;
+  const base = {
+    overall_summary: unescapeGemini(analysis?.overall_summary || ""),
+    extracted_info: asItems(analysis?.extracted_info),
+    key_points: asItems(analysis?.key_points),
+    detailed_summary: unescapeGemini(analysis?.detailed_summary || ""),
+    decisions: asItems(analysis?.decisions),
+    todos: asItems(analysis?.todos),
+    important: asItems(analysis?.important),
+  };
+  if (!parsed) return base;
+  if (!base.overall_summary) base.overall_summary = parsed.overall_summary;
+  if (!base.detailed_summary) base.detailed_summary = parsed.detailed_summary;
+  if (!base.extracted_info.length) base.extracted_info = parsed.extracted_info;
+  if (!base.key_points.length) base.key_points = parsed.key_points;
+  if (!base.decisions.length) base.decisions = parsed.decisions;
+  if (!base.todos.length) base.todos = parsed.todos;
+  if (!base.important.length) base.important = parsed.important;
+  return base;
+}
+
 export function formatAnalysisText(analysis: {
   overall_summary: string;
   extracted_info?: string[];
@@ -73,29 +186,40 @@ export function formatAnalysisText(analysis: {
   todos: string[];
   important: string[];
 } | null | undefined): string {
-  if (!analysis) return "";
+  const note = hydrateAnalysis(analysis);
+  if (
+    !note.overall_summary.trim() &&
+    !note.detailed_summary.trim() &&
+    !note.extracted_info.length &&
+    !note.key_points.length &&
+    !note.decisions.length &&
+    !note.todos.length &&
+    !note.important.length
+  ) {
+    return "";
+  }
   const bullets = (items: string[]) => (items.length ? items.map((x) => `- ${x}`).join("\n") : "없음");
   return [
     "【총정리】",
-    analysis.overall_summary.trim() || "없음",
+    note.overall_summary.trim() || "없음",
     "",
     "【정보 추가】",
-    bullets(analysis.extracted_info ?? []),
+    bullets(note.extracted_info),
     "",
     "【요약 정리】",
-    analysis.detailed_summary.trim() || "없음",
+    note.detailed_summary.trim() || "없음",
     "",
     "【핵심 내용】",
-    bullets(analysis.key_points),
+    bullets(note.key_points),
     "",
     "【결정 사항】",
-    bullets(analysis.decisions),
+    bullets(note.decisions),
     "",
     "【할 일】",
-    bullets(analysis.todos),
+    bullets(note.todos),
     "",
     "【중요 내용】",
-    bullets(analysis.important),
+    bullets(note.important),
   ].join("\n");
 }
 

@@ -8,10 +8,11 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from backend.config import settings
 from backend.storage import project_storage as store
+from backend.textfmt import as_str_list, unescape_text
 
 log = logging.getLogger("nas-note")
 _resolved_model: str | None = None
@@ -31,18 +32,21 @@ SYSTEM = (
     "짧은 감상문이나 '이런 내용이다'로 끝내지 마라. 나중에 이 글만 보고 복습할 수 있게 적어라. "
     "원문에 없는 사실·배경지식·추측을 넣지 마라. 불확실하면 불확실하다고 밝혀라. "
     "말이 거의 없거나 음악·잡음이면 그 사실을 총정리에 적고 요약 정리는 짧게 둬라. "
-    "출력은 스키마만. 마크다운 울타리를 넣지 마라.\n"
+    "출력은 스키마만. 마크다운 울타리를 넣지 마라. "
+    "문자열 값에는 실제 줄바꿈을 넣어라. 백슬래시와 n 두 글자(\\n)를 넣지 마라.\n"
     "필드 역할:\n"
     "- overall_summary(총정리): 무엇을 다루었는지 두괄식 6~12문장.\n"
     "- extracted_info(정보 추가): 원문에 나온 이름, 용어, 날짜, 숫자, 장소, 고유명사, URL. "
     "'항목: 값' 한 줄. 없으면 빈 배열.\n"
     "- detailed_summary(요약 정리, 메인): 절대 짧게 쓰지 마라. "
-    "시간 순·주제 순으로 공부할 본문을 거의 다 담는 필기. 소제목을 넣고 문단을 나눠라. "
+    "시간 순·주제 순으로 공부할 본문을 거의 다 담는 필기. 소제목(## 제목)과 빈 줄로 문단을 나눠라. "
     "설명, 예시, 비교, 절차, 주의점, 말한 이가 강조한 부분을 빠짐없이 적어라. "
     "한 시간 분량이면 수천 자 이상이 정상이다. "
     "구간 노트면 그 구간만 촘촘히 채우고 앞뒤를 짐작하지 마라.\n"
-    "- key_points: 나중에 다시 볼 핵심. 한 줄에 하나.\n"
-    "- decisions: 확정된 선택, 결론, 합의.\n"
+    "- key_points(핵심 내용): 원문에 배울 점이 있으면 비우지 마라. "
+    "정의, 원리, 비교, 강조점을 한 줄에 하나씩. 여러 문장을 한 문자열에 몰아넣지 마라.\n"
+    "- decisions(결정 사항): 확정된 선택, 결론, 합의, 진행 방향. "
+    "강의에서 결론을 냈으면 채워라. 없으면 빈 배열. '없음' 문자열을 넣지 마라.\n"
     "- todos: 숙제, 다음에 할 일, 따라 해 보라고 한 것.\n"
     "- important: 놓치면 안 되는 숫자, 기한, 이름, 예외, 강조점."
 )
@@ -57,9 +61,31 @@ class AnalysisResult(BaseModel):
     todos: list[str] = Field(default_factory=list)
     important: list[str] = Field(default_factory=list)
 
+    @field_validator("overall_summary", "detailed_summary", mode="before")
+    @classmethod
+    def _clean_text(cls, value: object) -> str:
+        return unescape_text("" if value is None else str(value))
+
+    @field_validator(
+        "extracted_info",
+        "key_points",
+        "decisions",
+        "todos",
+        "important",
+        mode="before",
+    )
+    @classmethod
+    def _clean_list(cls, value: object) -> list[str]:
+        return as_str_list(value)
+
 
 class MediaAnalysisResult(AnalysisResult):
     transcript: str = ""
+
+    @field_validator("transcript", mode="before")
+    @classmethod
+    def _clean_transcript(cls, value: object) -> str:
+        return unescape_text("" if value is None else str(value))
 
 
 AUDIO_SYSTEM = (
@@ -67,7 +93,9 @@ AUDIO_SYSTEM = (
     "그 내용만으로 정리하라. 들리지 않은 사실을 만들지 마라. "
     "말이 거의 없고 음악·효과음만 있으면 transcript에 확인된 가사나 짧은 멘트만 적고 "
     "분석은 실제로 들린 것만 채워라. 불확실하면 배열을 비워라. "
-    "출력은 스키마를 지켜라. 마크다운 울타리를 넣지 마라."
+    "출력은 스키마를 지켜라. 마크다운 울타리를 넣지 마라. "
+    "문자열에는 실제 줄바꿈을 넣고, 백슬래시와 n 두 글자(\\n)를 넣지 마라. "
+    "핵심 내용과 결정 사항은 들린 내용이 있으면 배열로 채워라."
 )
 
 _MIME = {
@@ -203,7 +231,7 @@ def live_analysis_text(raw: str) -> str:
         data = json.loads(raw)
         return format_analysis_text(AnalysisResult.model_validate(data))
     except Exception:
-        return "작성 중…\n\n" + raw
+        return "작성 중…\n\n" + unescape_text(raw)
 
 
 def _generate_once(client: object, model: str, contents: object, config: object, draft_path: Path | None) -> str:
@@ -330,6 +358,7 @@ async def _call(prompt: str, draft_path: Path | None = None) -> AnalysisResult:
 
 
 def _persist_analysis(rel_dir: str, result: AnalysisResult) -> None:
+    result = AnalysisResult.model_validate(result.model_dump())
     root = store.project_root(rel_dir)
     body = format_analysis_text(result)
     store.write_json(root / "analysis.json", result.model_dump())
@@ -378,7 +407,9 @@ async def analyze(title: str, transcript: str, rel_dir: str) -> AnalysisResult:
             "총정리는 전체를 관통하는 글로 다시 쓰고, 배열 필드는 중복만 빼서 합쳐라. "
             "요약 정리(detailed_summary)는 절대 짧게 압축하지 마라. "
             "각 구간의 요약 정리를 시간 순으로 이어서 하나의 긴 공부 정리로 만들고, "
-            "소제목과 문단을 유지하라. 내용을 한 페이지로 줄이지 마라.\n\n"
+            "소제목과 문단을 유지하라. 내용을 한 페이지로 줄이지 마라. "
+            "핵심 내용·결정 사항 배열은 비우지 말고 합쳐라. "
+            "문자열에 \\n 두 글자를 넣지 말고 실제 줄바꿈을 넣어라.\n\n"
             + json.dumps(partials, ensure_ascii=False)
         )
         result = await _call(reduce_prompt, draft)

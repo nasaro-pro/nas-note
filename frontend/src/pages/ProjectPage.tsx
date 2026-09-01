@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Loader } from "lucide-react";
 import { api } from "../api";
-import { AnalysisSections } from "../components/AnalysisSections";
-import { formatAnalysisText, formatBytes, formatDuration, statusClass, statusLabel } from "../format";
+import { AnalysisSections, NoteBody } from "../components/AnalysisSections";
+import { formatAnalysisText, formatBytes, formatDuration, hydrateAnalysis, statusClass, statusLabel, unescapeGemini } from "../format";
 import type { Project } from "../types";
 
 export function ProjectPage() {
@@ -121,8 +121,20 @@ export function ProjectPage() {
     setTimeout(() => setToast(""), 3000);
   }
 
-  const analysisBody = project.analysis_text || formatAnalysisText(project.analysis);
+  const hydrated = hydrateAnalysis(project.analysis, project.analysis_text);
+  const analysisBody = unescapeGemini(project.analysis_text || "") || formatAnalysisText(hydrated);
   const transcriptBody = project.transcript || "";
+  const showStructured =
+    project.status === "done" &&
+    Boolean(
+      hydrated.detailed_summary ||
+        hydrated.overall_summary ||
+        hydrated.key_points.length ||
+        hydrated.decisions.length ||
+        hydrated.todos.length ||
+        hydrated.important.length ||
+        hydrated.extracted_info.length,
+    );
 
   const sub =
     project.status === "pending"
@@ -240,17 +252,22 @@ export function ProjectPage() {
                 </button>
               ) : null}
             </div>
-            {project.status === "done" && project.analysis ? (
-              <AnalysisSections analysis={project.analysis} />
+            {showStructured ? (
+              <AnalysisSections analysis={hydrated} />
             ) : (
-              <p className={`transcript${processing && project.status === "analyzing" ? " live-caret" : ""}`}>
-                {analysisBody ||
-                  (processing
-                    ? project.status === "analyzing"
-                      ? "Gemini가 요약 정리를 쓰기 시작했습니다."
-                      : "전사가 끝나면 여기에 요약 정리가 작성됩니다."
-                    : "저장된 요약 정리가 없습니다.")}
-              </p>
+              <div className={processing && project.status === "analyzing" ? "live-caret" : undefined}>
+                {analysisBody ? (
+                  <NoteBody text={analysisBody} />
+                ) : (
+                  <p className="transcript">
+                    {processing
+                      ? project.status === "analyzing"
+                        ? "Gemini가 요약 정리를 쓰기 시작했습니다."
+                        : "전사가 끝나면 여기에 요약 정리가 작성됩니다."
+                      : "저장된 요약 정리가 없습니다."}
+                  </p>
+                )}
+              </div>
             )}
           </section>
         </div>

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 from pathlib import Path
@@ -11,6 +10,7 @@ from pydantic import BaseModel
 
 from backend.config import settings
 from backend.database import db
+from backend.textfmt import as_str_list, unescape_text
 from backend.services.audio_service import ffmpeg_ok, probe
 from backend.storage import project_storage as store
 from backend.workers.processing_worker import retry_project, worker
@@ -21,13 +21,7 @@ ALLOWED = store.ALLOWED_EXT
 
 
 def _parse_list(raw: str | None) -> list[str]:
-    if not raw:
-        return []
-    try:
-        data = json.loads(raw)
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
+    return as_str_list(raw)
 
 
 def _percent(status: str, chunks: list[dict]) -> int:
@@ -57,7 +51,7 @@ def _live_texts(rel_dir: str) -> tuple[str, str]:
     transcript = store.read_text(root / "full_transcript.txt")
     draft = store.read_text(root / "analysis_draft.txt").strip()
     saved = store.read_text(root / "analysis.txt").strip()
-    return transcript, draft or saved
+    return transcript, unescape_text(draft or saved)
 
 
 @router.get("/health")
@@ -158,15 +152,16 @@ async def get_project(project_id: int) -> dict:
     analysis = None
     if analysis_row:
         analysis = {
-            "overall_summary": analysis_row["overall_summary"] or "",
+            "overall_summary": unescape_text(analysis_row["overall_summary"] or ""),
             "extracted_info": _parse_list(dict(analysis_row).get("extracted_info")),
             "key_points": _parse_list(analysis_row["key_points"]),
-            "detailed_summary": analysis_row["detailed_summary"] or "",
+            "detailed_summary": unescape_text(analysis_row["detailed_summary"] or ""),
             "decisions": _parse_list(analysis_row["decisions"]),
             "todos": _parse_list(analysis_row["todos"]),
             "important": _parse_list(analysis_row["important"]),
         }
     transcript, analysis_text = _live_texts(row["rel_dir"])
+    analysis_text = unescape_text(analysis_text)
     return {
         **row,
         "video_url": store.load_video_url(row["rel_dir"], row.get("video_url")),
@@ -199,7 +194,7 @@ async def project_status(project_id: int) -> dict:
         "error_message": row["error_message"],
         "chunks": chunks,
         "transcript": transcript,
-        "analysis_text": analysis_text,
+        "analysis_text": unescape_text(analysis_text),
     }
 
 
