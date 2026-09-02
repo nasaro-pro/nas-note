@@ -288,18 +288,36 @@ try {
     Ensure-Ffmpeg
     Ensure-EnvFile
 
-    $venvPython = Join-Path $Root "backend\.venv\Scripts\python.exe"
+    $env:TMP = Join-Path $env:LOCALAPPDATA "Temp"
+    $env:TEMP = $env:TMP
+    New-Item -ItemType Directory -Force -Path $env:TMP | Out-Null
+
+    $venvDir = Join-Path $Root "backend\.venv"
+    $venvPython = Join-Path $venvDir "Scripts\python.exe"
     if (-not (Test-Path $venvPython)) {
         Write-Log "Python 가상환경 생성"
-        & $py.Exe @($py.Args + @("-m", "venv", "backend\.venv"))
+        & $py.Exe @($py.Args + @("-m", "venv", $venvDir))
         if (-not (Test-Path $venvPython)) {
             Fail "가상환경을 만들지 못했습니다."
         }
     }
 
+    $req = Join-Path $Root "backend\requirements.txt"
+    Write-Log "pip 준비"
+    & $venvPython -m ensurepip --upgrade 2>$null
+    & $venvPython -m pip install --upgrade pip setuptools wheel --disable-pip-version-check
     Write-Log "Python 패키지 설치 중..."
-    & $venvPython -m pip install -r (Join-Path $Root "backend\requirements.txt") --disable-pip-version-check
-    if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { Fail "Python 패키지 설치 실패" }
+    $pipOk = $false
+    foreach ($try in 1, 2) {
+        & $venvPython -m pip install -r $req --disable-pip-version-check --no-cache-dir --prefer-binary
+        if ($LASTEXITCODE -eq 0) { $pipOk = $true; break }
+        Write-Log "패키지 설치 재시도 $try"
+        Remove-Item -Recurse -Force $venvDir -ErrorAction SilentlyContinue
+        & $py.Exe @($py.Args + @("-m", "venv", $venvDir))
+        & $venvPython -m ensurepip --upgrade 2>$null
+        & $venvPython -m pip install --upgrade pip setuptools wheel --disable-pip-version-check
+    }
+    if (-not $pipOk) { Fail "Python 패키지 설치 실패. 인터넷을 확인하고 start.ps1을 다시 실행하세요." }
 
     Refresh-Path
     $npm = Find-Npm
