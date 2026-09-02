@@ -113,13 +113,13 @@ function Find-Python {
         }
     }
 
-    foreach ($home in @(
+    foreach ($pySearchRoot in @(
             "$env:LocalAppData\Programs\Python",
             "$env:ProgramFiles\Python",
             "${env:ProgramFiles(x86)}\Python"
         )) {
-        if (-not (Test-Path $home)) { continue }
-        foreach ($hit in Get-ChildItem $home -Filter python.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20) {
+        if (-not (Test-Path $pySearchRoot)) { continue }
+        foreach ($hit in Get-ChildItem $pySearchRoot -Filter python.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20) {
             Add-PythonTry $tries $hit.FullName @()
         }
     }
