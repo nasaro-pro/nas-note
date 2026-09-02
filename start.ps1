@@ -80,17 +80,25 @@ function Find-Python {
     $tries = New-Object System.Collections.Generic.List[object]
 
     foreach ($p in @(
+            "$env:LocalAppData\Python\pythoncore-3.14-64\python.exe",
+            "$env:LocalAppData\Python\pythoncore-3.14-arm64\python.exe",
+            "$env:LocalAppData\Python\bin\python.exe",
+            "$env:LocalAppData\Programs\Python\Python314\python.exe",
+            "$env:ProgramFiles\Python314\python.exe",
+            "C:\Python314\python.exe",
+            "$env:LocalAppData\Programs\Python\Python313\python.exe",
             "$env:LocalAppData\Programs\Python\Python312\python.exe",
             "$env:LocalAppData\Programs\Python\Python312-arm64\python.exe",
-            "$env:LocalAppData\Programs\Python\Python313\python.exe",
+            "$env:LocalAppData\Python\pythoncore-3.12-64\python.exe",
             "$env:LocalAppData\Programs\Python\Python311\python.exe",
             "$env:LocalAppData\Programs\Python\Python310\python.exe",
-            "$env:ProgramFiles\Python312\python.exe",
             "$env:ProgramFiles\Python313\python.exe",
+            "$env:ProgramFiles\Python312\python.exe",
             "$env:ProgramFiles\Python311\python.exe",
             "$env:ProgramFiles\Python310\python.exe",
             "${env:ProgramFiles(x86)}\Python312-32\python.exe",
             "${env:ProgramFiles(x86)}\Python311-32\python.exe",
+            "C:\Python313\python.exe",
             "C:\Python312\python.exe",
             "C:\Python311\python.exe",
             "C:\Python310\python.exe"
@@ -114,6 +122,7 @@ function Find-Python {
     }
 
     foreach ($pySearchRoot in @(
+            "$env:LocalAppData\Python",
             "$env:LocalAppData\Programs\Python",
             "$env:ProgramFiles\Python",
             "${env:ProgramFiles(x86)}\Python"
@@ -138,7 +147,7 @@ function Find-Python {
             "C:\Windows\py.exe"
         )) {
         if (Test-Path $launcher) {
-            foreach ($arg in @("-3.12", "-3.13", "-3.11", "-3.10")) {
+            foreach ($arg in @("-3.14", "-3.13", "-3.12", "-3.11", "-3.10")) {
                 Add-PythonTry $tries $launcher @($arg)
             }
         }
@@ -146,7 +155,7 @@ function Find-Python {
 
     if (Test-RealCommand "py") {
         $pyExe = (Get-Command py).Source
-        foreach ($arg in @("-3.12", "-3.13", "-3.11", "-3.10")) {
+        foreach ($arg in @("-3.14", "-3.13", "-3.12", "-3.11", "-3.10")) {
             Add-PythonTry $tries $pyExe @($arg)
         }
     }
@@ -254,10 +263,10 @@ function Ensure-Python {
         Write-Log "Python $v 사용: $($py.Exe) $($py.Args -join ' ')"
         return $py
     }
-    Write-Log "Python 3.10+ 가 없습니다. (3.6 같은 오래된 건 쓰지 않습니다) 3.12를 설치합니다."
-    Install-WingetId "Python.Python.3.12"
-    if (-not (Wait-For { $null -ne (Find-Python) } "Python 3.12" 30)) {
-        Fail "Python 3.12를 찾지 못했습니다. PowerShell을 닫고 다시 연 다음 start.ps1을 실행하세요."
+    Write-Log "Python 3.10+ 가 없습니다. (3.6 같은 오래된 건 쓰지 않습니다) 3.14를 설치합니다."
+    Install-WingetId "Python.Python.3.14"
+    if (-not (Wait-For { $null -ne (Find-Python) } "Python 3.14" 30)) {
+        Fail "Python 3.14를 찾지 못했습니다. PowerShell을 닫고 다시 연 다음 start.ps1을 실행하세요."
     }
     $py = Find-Python
     $v = Get-PythonVersion $py
