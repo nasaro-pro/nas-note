@@ -489,23 +489,25 @@ try {
         $venvVer = Get-PythonVersion @{ Exe = $PythonExe; PyArgs = @() }
         Write-Log "pip 준비 (venv Python $venvVer)"
         if (-not $venvVer -or $venvVer -lt [version]"3.10") { return 99 }
-        & $PythonExe -m ensurepip --upgrade
+        # Native stdout must not enter the function output stream.
+        # Otherwise $pipCode becomes [pip log lines..., 0] and `-ne 0` is always true.
+        & $PythonExe -m ensurepip --upgrade 2>&1 | Out-Host
         Write-Log "pip 업그레이드"
-        & $PythonExe -m pip install --upgrade pip setuptools wheel --disable-pip-version-check
+        & $PythonExe -m pip install --upgrade pip setuptools wheel --disable-pip-version-check 2>&1 | Out-Host
         Write-Log "Python 패키지 설치 중..."
-        & $PythonExe -m pip install -r $reqAscii --disable-pip-version-check --prefer-binary
+        & $PythonExe -m pip install -r $reqAscii --disable-pip-version-check --prefer-binary 2>&1 | Out-Host
         $code = $LASTEXITCODE
         if ($null -eq $code) { $code = 1 }
         if ($code -ne 0) {
             Write-Log "pip 종료 코드 $code. trusted-host 로 다시 시도"
             & $PythonExe -m pip install -r $reqAscii --disable-pip-version-check --prefer-binary `
-                --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org
+                --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org 2>&1 | Out-Host
             $code = $LASTEXITCODE
             if ($null -eq $code) { $code = 1 }
         }
-        return $code
+        return [int]$code
     }
-    $pipCode = Invoke-NasNotePip $venvPython
+    $pipCode = [int](Invoke-NasNotePip $venvPython)
     if ($pipCode -ne 0) {
         Write-Log "패키지 설치 한 번 더 시도 (영문 경로에 가상환경 다시 만듦)"
         $venvDir = Join-Path $env:LOCALAPPDATA "nas-note\venv-$hash"
@@ -516,7 +518,7 @@ try {
         if ($py.PyArgs) { $venvCreate += @($py.PyArgs) }
         $venvCreate += @("-m", "venv", $venvDir)
         & $py.Exe @venvCreate
-        $pipCode = Invoke-NasNotePip $venvPython
+        $pipCode = [int](Invoke-NasNotePip $venvPython)
     }
     if ($pipCode -ne 0) {
         Fail "Python 패키지 설치 실패 (코드 $pipCode). 위 pip 에러를 확인하세요."
