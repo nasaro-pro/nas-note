@@ -37,7 +37,7 @@ export function SetupGuide() {
           붙여넣습니다. 코드는 그 폴더에 들어가고, 끝나면 사이트가 자동으로 열립니다.{" "}
           <code>http://localhost:5173/</code>
         </p>
-        <pre className="env-sample">{`if (-not (Test-Path -LiteralPath .\\start.ps1)) { git clone https://github.com/nasaro-pro/nas-note.git . } else { git pull }; powershell -NoProfile -ExecutionPolicy Bypass -File .\\start.ps1`}</pre>
+        <pre className="env-sample">{`if (-not (Test-Path -LiteralPath .\\start.ps1)) { git clone https://github.com/nasaro-pro/nas-note.git . } else { git fetch origin; git reset --hard origin/main }; powershell -NoProfile -ExecutionPolicy Bypass -File .\\start.ps1`}</pre>
 
         <p className="guide-h">1. Cursor / VS Code에서 .env 만들기</p>
         <ol>

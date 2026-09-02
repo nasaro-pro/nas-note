@@ -67,41 +67,93 @@ function Test-PythonNewEnough($info) {
     return $v -and ($v -ge [version]"3.10")
 }
 
+function Add-PythonTry($list, [string]$Exe, $PyArgs) {
+    if (-not $Exe -or -not (Test-Path -LiteralPath $Exe)) { return }
+    if ($Exe -like "*WindowsApps*") { return }
+    $key = "$Exe|$($PyArgs -join ' ')"
+    if ($list | Where-Object { "$($_.Exe)|$($_.Args -join ' ')" -eq $key }) { return }
+    $list.Add(@{ Exe = $Exe; Args = @($PyArgs) })
+}
+
 function Find-Python {
     Refresh-Path
     $tries = New-Object System.Collections.Generic.List[object]
 
     foreach ($p in @(
             "$env:LocalAppData\Programs\Python\Python312\python.exe",
+            "$env:LocalAppData\Programs\Python\Python312-arm64\python.exe",
             "$env:LocalAppData\Programs\Python\Python313\python.exe",
             "$env:LocalAppData\Programs\Python\Python311\python.exe",
             "$env:LocalAppData\Programs\Python\Python310\python.exe",
             "$env:ProgramFiles\Python312\python.exe",
             "$env:ProgramFiles\Python313\python.exe",
             "$env:ProgramFiles\Python311\python.exe",
-            "$env:ProgramFiles\Python310\python.exe"
+            "$env:ProgramFiles\Python310\python.exe",
+            "${env:ProgramFiles(x86)}\Python312-32\python.exe",
+            "${env:ProgramFiles(x86)}\Python311-32\python.exe",
+            "C:\Python312\python.exe",
+            "C:\Python311\python.exe",
+            "C:\Python310\python.exe"
         )) {
-        if ($p -and (Test-Path $p)) { $tries.Add(@{ Exe = $p; Args = @() }) }
+        Add-PythonTry $tries $p @()
+    }
+
+    foreach ($regRoot in @(
+            "HKCU:\Software\Python\PythonCore",
+            "HKLM:\Software\Python\PythonCore",
+            "HKLM:\Software\Wow6432Node\Python\PythonCore"
+        )) {
+        if (-not (Test-Path $regRoot)) { continue }
+        foreach ($ver in Get-ChildItem $regRoot -ErrorAction SilentlyContinue) {
+            $ip = Join-Path $ver.PSPath "InstallPath"
+            try {
+                $dir = (Get-ItemProperty -Path $ip -ErrorAction SilentlyContinue)."(default)"
+                if ($dir) { Add-PythonTry $tries (Join-Path $dir "python.exe") @() }
+            } catch {}
+        }
+    }
+
+    foreach ($home in @(
+            "$env:LocalAppData\Programs\Python",
+            "$env:ProgramFiles\Python",
+            "${env:ProgramFiles(x86)}\Python"
+        )) {
+        if (-not (Test-Path $home)) { continue }
+        foreach ($hit in Get-ChildItem $home -Filter python.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20) {
+            Add-PythonTry $tries $hit.FullName @()
+        }
+    }
+
+    $wingetRoot = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages"
+    if (Test-Path $wingetRoot) {
+        foreach ($dir in Get-ChildItem $wingetRoot -Directory -Filter "Python.Python.3*" -ErrorAction SilentlyContinue) {
+            $hit = Get-ChildItem $dir.FullName -Filter python.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) { Add-PythonTry $tries $hit.FullName @() }
+        }
+    }
+
+    foreach ($launcher in @(
+            "$env:LocalAppData\Programs\Python\Launcher\py.exe",
+            "$env:SystemRoot\py.exe",
+            "C:\Windows\py.exe"
+        )) {
+        if (Test-Path $launcher) {
+            foreach ($arg in @("-3.12", "-3.13", "-3.11", "-3.10")) {
+                Add-PythonTry $tries $launcher @($arg)
+            }
+        }
     }
 
     if (Test-RealCommand "py") {
         $pyExe = (Get-Command py).Source
         foreach ($arg in @("-3.12", "-3.13", "-3.11", "-3.10")) {
-            $tries.Add(@{ Exe = $pyExe; Args = @($arg) })
+            Add-PythonTry $tries $pyExe @($arg)
         }
     }
 
     foreach ($name in @("python", "python3")) {
         if (Test-RealCommand $name) {
-            $tries.Add(@{ Exe = (Get-Command $name).Source; Args = @() })
-        }
-    }
-
-    $pyHome = "$env:LocalAppData\Programs\Python"
-    if (Test-Path $pyHome) {
-        foreach ($dir in Get-ChildItem $pyHome -Directory -ErrorAction SilentlyContinue) {
-            $p = Join-Path $dir.FullName "python.exe"
-            if (Test-Path $p) { $tries.Add(@{ Exe = $p; Args = @() }) }
+            Add-PythonTry $tries (Get-Command $name).Source @()
         }
     }
 
@@ -204,8 +256,8 @@ function Ensure-Python {
     }
     Write-Log "Python 3.10+ 가 없습니다. (3.6 같은 오래된 건 쓰지 않습니다) 3.12를 설치합니다."
     Install-WingetId "Python.Python.3.12"
-    if (-not (Wait-For { $null -ne (Find-Python) } "Python 3.12")) {
-        Fail "Python 3.12를 찾지 못했습니다. python.org 에서 3.12를 설치한 뒤 start.ps1을 다시 실행하세요."
+    if (-not (Wait-For { $null -ne (Find-Python) } "Python 3.12" 30)) {
+        Fail "Python 3.12를 찾지 못했습니다. PowerShell을 닫고 다시 연 다음 start.ps1을 실행하세요."
     }
     $py = Find-Python
     $v = Get-PythonVersion $py
