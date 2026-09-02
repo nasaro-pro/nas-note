@@ -133,7 +133,8 @@ export function ProjectPage() {
         hydrated.decisions.length ||
         hydrated.todos.length ||
         hydrated.important.length ||
-        hydrated.extracted_info.length,
+        hydrated.extracted_info.length ||
+        hydrated.glossary.length,
     );
 
   const sub =

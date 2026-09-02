@@ -94,10 +94,12 @@ export function asItems(value: string | string[] | null | undefined): string[] {
     .filter((line) => line && line !== "없음");
 }
 
-const SECTION_KEYS: Record<string, "overall_summary" | "extracted_info" | "detailed_summary" | "key_points" | "decisions" | "todos" | "important"> = {
+const SECTION_KEYS: Record<string, "overall_summary" | "extracted_info" | "glossary" | "detailed_summary" | "key_points" | "decisions" | "todos" | "important"> = {
   총정리: "overall_summary",
   "정보 추가": "extracted_info",
   정보추가: "extracted_info",
+  용어정리: "glossary",
+  "용어 정리": "glossary",
   "요약 정리": "detailed_summary",
   요약정리: "detailed_summary",
   "핵심 내용": "key_points",
@@ -113,6 +115,7 @@ const SECTION_KEYS: Record<string, "overall_summary" | "extracted_info" | "detai
 export function parseAnalysisDump(text: string): {
   overall_summary: string;
   extracted_info: string[];
+  glossary: string[];
   detailed_summary: string;
   key_points: string[];
   decisions: string[];
@@ -122,6 +125,7 @@ export function parseAnalysisDump(text: string): {
   const empty = {
     overall_summary: "",
     extracted_info: [] as string[],
+    glossary: [] as string[],
     detailed_summary: "",
     key_points: [] as string[],
     decisions: [] as string[],
@@ -148,6 +152,7 @@ export function hydrateAnalysis(
   analysis: {
     overall_summary: string;
     extracted_info?: string[];
+    glossary?: string[];
     key_points: string[];
     detailed_summary: string;
     decisions: string[];
@@ -160,6 +165,7 @@ export function hydrateAnalysis(
   const base = {
     overall_summary: unescapeGemini(analysis?.overall_summary || ""),
     extracted_info: asItems(analysis?.extracted_info),
+    glossary: asItems(analysis?.glossary),
     key_points: asItems(analysis?.key_points),
     detailed_summary: unescapeGemini(analysis?.detailed_summary || ""),
     decisions: asItems(analysis?.decisions),
@@ -170,6 +176,7 @@ export function hydrateAnalysis(
   if (!base.overall_summary) base.overall_summary = parsed.overall_summary;
   if (!base.detailed_summary) base.detailed_summary = parsed.detailed_summary;
   if (!base.extracted_info.length) base.extracted_info = parsed.extracted_info;
+  if (!base.glossary.length) base.glossary = parsed.glossary;
   if (!base.key_points.length) base.key_points = parsed.key_points;
   if (!base.decisions.length) base.decisions = parsed.decisions;
   if (!base.todos.length) base.todos = parsed.todos;
@@ -180,6 +187,7 @@ export function hydrateAnalysis(
 export function formatAnalysisText(analysis: {
   overall_summary: string;
   extracted_info?: string[];
+  glossary?: string[];
   key_points: string[];
   detailed_summary: string;
   decisions: string[];
@@ -191,6 +199,7 @@ export function formatAnalysisText(analysis: {
     !note.overall_summary.trim() &&
     !note.detailed_summary.trim() &&
     !note.extracted_info.length &&
+    !note.glossary.length &&
     !note.key_points.length &&
     !note.decisions.length &&
     !note.todos.length &&
@@ -205,6 +214,9 @@ export function formatAnalysisText(analysis: {
     "",
     "【정보 추가】",
     bullets(note.extracted_info),
+    "",
+    "【용어정리】",
+    bullets(note.glossary),
     "",
     "【요약 정리】",
     note.detailed_summary.trim() || "없음",

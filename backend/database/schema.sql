@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS analyses (
   decisions        TEXT,
   todos            TEXT,
   important        TEXT,
-  extracted_info   TEXT
+  extracted_info   TEXT,
+  glossary         TEXT
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS transcripts_fts USING fts5(

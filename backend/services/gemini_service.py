@@ -36,8 +36,11 @@ SYSTEM = (
     "문자열 값에는 실제 줄바꿈을 넣어라. 백슬래시와 n 두 글자(\\n)를 넣지 마라.\n"
     "필드 역할:\n"
     "- overall_summary(총정리): 무엇을 다루었는지 두괄식 6~12문장.\n"
-    "- extracted_info(정보 추가): 원문에 나온 이름, 용어, 날짜, 숫자, 장소, 고유명사, URL. "
-    "'항목: 값' 한 줄. 없으면 빈 배열.\n"
+    "- extracted_info(정보 추가): 원문에 나온 이름, 날짜, 숫자, 장소, 고유명사, URL. "
+    "'항목: 값' 한 줄. 뜻 설명은 넣지 마라. 없으면 빈 배열.\n"
+    "- glossary(용어정리): 원문에 나온 전문용어, 약어, 개념. "
+    "'용어: 원문에서 말한 뜻' 한 줄에 하나. 원문에 설명이 없으면 이름만. "
+    "공부할 말이 있으면 비우지 마라. 여러 용어를 한 문자열에 몰아넣지 마라.\n"
     "- detailed_summary(요약 정리, 메인): 절대 짧게 쓰지 마라. "
     "시간 순·주제 순으로 공부할 본문을 거의 다 담는 필기. 소제목(## 제목)과 빈 줄로 문단을 나눠라. "
     "설명, 예시, 비교, 절차, 주의점, 말한 이가 강조한 부분을 빠짐없이 적어라. "
@@ -55,6 +58,7 @@ SYSTEM = (
 class AnalysisResult(BaseModel):
     overall_summary: str = ""
     extracted_info: list[str] = Field(default_factory=list)
+    glossary: list[str] = Field(default_factory=list)
     key_points: list[str] = Field(default_factory=list)
     detailed_summary: str = ""
     decisions: list[str] = Field(default_factory=list)
@@ -68,6 +72,7 @@ class AnalysisResult(BaseModel):
 
     @field_validator(
         "extracted_info",
+        "glossary",
         "key_points",
         "decisions",
         "todos",
@@ -95,7 +100,7 @@ AUDIO_SYSTEM = (
     "분석은 실제로 들린 것만 채워라. 불확실하면 배열을 비워라. "
     "출력은 스키마를 지켜라. 마크다운 울타리를 넣지 마라. "
     "문자열에는 실제 줄바꿈을 넣고, 백슬래시와 n 두 글자(\\n)를 넣지 마라. "
-    "핵심 내용과 결정 사항은 들린 내용이 있으면 배열로 채워라."
+    "핵심 내용, 결정 사항, 용어정리는 들린 내용이 있으면 배열로 채워라."
 )
 
 _MIME = {
@@ -408,7 +413,7 @@ async def analyze(title: str, transcript: str, rel_dir: str) -> AnalysisResult:
             "요약 정리(detailed_summary)는 절대 짧게 압축하지 마라. "
             "각 구간의 요약 정리를 시간 순으로 이어서 하나의 긴 공부 정리로 만들고, "
             "소제목과 문단을 유지하라. 내용을 한 페이지로 줄이지 마라. "
-            "핵심 내용·결정 사항 배열은 비우지 말고 합쳐라. "
+            "핵심 내용·결정 사항·용어정리 배열은 비우지 말고 합쳐라. "
             "문자열에 \\n 두 글자를 넣지 말고 실제 줄바꿈을 넣어라.\n\n"
             + json.dumps(partials, ensure_ascii=False)
         )
@@ -428,6 +433,9 @@ def format_analysis_text(result: AnalysisResult) -> str:
         "",
         "【정보 추가】",
         bullets(result.extracted_info),
+        "",
+        "【용어정리】",
+        bullets(result.glossary),
         "",
         "【요약 정리】",
         (result.detailed_summary or "").strip() or "없음",

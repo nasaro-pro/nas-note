@@ -38,6 +38,10 @@ async def init_db() -> None:
             await conn.execute("ALTER TABLE analyses ADD COLUMN extracted_info TEXT")
         except Exception:
             pass
+        try:
+            await conn.execute("ALTER TABLE analyses ADD COLUMN glossary TEXT")
+        except Exception:
+            pass
         await conn.commit()
     finally:
         await conn.close()

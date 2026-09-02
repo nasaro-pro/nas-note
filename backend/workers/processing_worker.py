@@ -88,41 +88,45 @@ async def _write_project_json(row: dict) -> None:
 
 
 async def _save_analysis(project_id: int, result: gemini_service.AnalysisResult) -> None:
-    payload = (
-        db.dumps(result.extracted_info),
-        db.dumps(result.key_points),
-        db.dumps(result.decisions),
-        db.dumps(result.todos),
-        db.dumps(result.important),
-    )
+    extracted = db.dumps(result.extracted_info)
+    points = db.dumps(result.key_points)
+    glossary = db.dumps(result.glossary)
+    decisions = db.dumps(result.decisions)
+    todos = db.dumps(result.todos)
+    important = db.dumps(result.important)
     existing = await db.fetchone("SELECT id FROM analyses WHERE project_id=?", (project_id,))
     if existing:
         await db.execute(
-            """UPDATE analyses SET overall_summary=?, extracted_info=?, key_points=?, detailed_summary=?,
-               decisions=?, todos=?, important=? WHERE project_id=?""",
+            """UPDATE analyses SET overall_summary=?, extracted_info=?, glossary=?, key_points=?,
+               detailed_summary=?, decisions=?, todos=?, important=? WHERE project_id=?""",
             (
                 result.overall_summary,
-                payload[0],
-                payload[1],
+                extracted,
+                glossary,
+                points,
                 result.detailed_summary,
-                payload[2],
-                payload[3],
-                payload[4],
+                decisions,
+                todos,
+                important,
                 project_id,
             ),
         )
     else:
         await db.execute(
             """INSERT INTO analyses
-               (project_id, overall_summary, extracted_info, key_points, detailed_summary, decisions, todos, important)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (project_id, overall_summary, extracted_info, glossary, key_points, detailed_summary,
+                decisions, todos, important)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 project_id,
                 result.overall_summary,
-                payload[0],
-                payload[1],
+                extracted,
+                glossary,
+                points,
                 result.detailed_summary,
-                *payload[2:],
+                decisions,
+                todos,
+                important,
             ),
         )
 

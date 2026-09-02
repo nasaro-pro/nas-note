@@ -130,6 +130,9 @@ export function AnalysisSections({ analysis }: { analysis: Analysis }) {
       <Block label="정보 추가">
         <List items={analysis.extracted_info ?? []} />
       </Block>
+      <Block label="용어정리">
+        <List items={analysis.glossary ?? []} />
+      </Block>
       <Block label="핵심 내용">
         <List items={analysis.key_points} />
       </Block>

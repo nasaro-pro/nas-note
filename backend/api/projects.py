@@ -154,6 +154,7 @@ async def get_project(project_id: int) -> dict:
         analysis = {
             "overall_summary": unescape_text(analysis_row["overall_summary"] or ""),
             "extracted_info": _parse_list(dict(analysis_row).get("extracted_info")),
+            "glossary": _parse_list(dict(analysis_row).get("glossary")),
             "key_points": _parse_list(analysis_row["key_points"]),
             "detailed_summary": unescape_text(analysis_row["detailed_summary"] or ""),
             "decisions": _parse_list(analysis_row["decisions"]),

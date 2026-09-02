@@ -92,7 +92,7 @@ async def search(q: str) -> list[dict]:
             an = await db.fetchall(
                 """
                 SELECT a.project_id, p.title, p.status, p.date,
-                       a.overall_summary, a.extracted_info, a.key_points, a.detailed_summary,
+                       a.overall_summary, a.extracted_info, a.glossary, a.key_points, a.detailed_summary,
                        a.decisions, a.todos, a.important
                 FROM analyses_fts f
                 JOIN analyses a ON a.id = f.rowid
@@ -111,6 +111,7 @@ async def search(q: str) -> list[dict]:
                 for k in (
                     "overall_summary",
                     "extracted_info",
+                    "glossary",
                     "key_points",
                     "detailed_summary",
                     "decisions",
@@ -162,16 +163,16 @@ async def search(q: str) -> list[dict]:
         likes_a = await db.fetchall(
             """
             SELECT a.project_id, p.title, p.status, p.date,
-                   a.overall_summary, a.extracted_info, a.key_points, a.detailed_summary,
+                   a.overall_summary, a.extracted_info, a.glossary, a.key_points, a.detailed_summary,
                    a.decisions, a.todos, a.important
             FROM analyses a
             JOIN projects p ON p.id = a.project_id
-            WHERE a.overall_summary LIKE ? OR a.extracted_info LIKE ? OR a.key_points LIKE ?
-               OR a.detailed_summary LIKE ? OR a.decisions LIKE ?
+            WHERE a.overall_summary LIKE ? OR a.extracted_info LIKE ? OR a.glossary LIKE ?
+               OR a.key_points LIKE ? OR a.detailed_summary LIKE ? OR a.decisions LIKE ?
                OR a.todos LIKE ? OR a.important LIKE ?
             LIMIT 40
             """,
-            (f"%{q}%",) * 7,
+            (f"%{q}%",) * 8,
         )
         for row in likes_a:
             blob = " ".join(str(row.get(k) or "") for k in row.keys() if k not in ("project_id", "title", "status", "date"))

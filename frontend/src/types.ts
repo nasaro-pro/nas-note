@@ -17,6 +17,7 @@ export type Chunk = {
 export type Analysis = {
   overall_summary: string;
   extracted_info: string[];
+  glossary: string[];
   key_points: string[];
   detailed_summary: string;
   decisions: string[];
