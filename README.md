@@ -11,7 +11,7 @@ ZIP으로 받지 마세요. **빈 폴더**에서 GitHub `git clone`을 하면 �
 3. **아래 박스 안만** 붙여넣는다. `PS C:\...>` 는 넣지 않는다.
 
 ```
-if (-not (Test-Path -LiteralPath .\start.ps1)) { git clone https://github.com/nasaro-pro/nas-note.git . }; powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
+if (-not (Test-Path -LiteralPath .\start.ps1)) { git clone https://github.com/nasaro-pro/nas-note.git . } else { git pull }; powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
 처음이면 몇 분 걸릴 수 있습니다. 끝나면 브라우저가 열리고 바로 쓰면 됩니다. 안 열리면 **http://localhost:5173/** 을 주소창에 넣습니다.

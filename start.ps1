@@ -53,33 +53,60 @@ function Test-RealCommand([string]$Name) {
     return $true
 }
 
+function Get-PythonVersion($info) {
+    try {
+        $raw = & $info.Exe @($info.Args + @("-c", "import sys; print('%d.%d' % (sys.version_info[0], sys.version_info[1]))")) 2>$null
+        $line = @($raw | Where-Object { $_ -match "^\d+\.\d+" } | Select-Object -First 1)
+        if ($line) { return [version]$line.ToString().Trim() }
+    } catch {}
+    return $null
+}
+
+function Test-PythonNewEnough($info) {
+    $v = Get-PythonVersion $info
+    return $v -and ($v -ge [version]"3.10")
+}
+
 function Find-Python {
     Refresh-Path
-    if (Test-RealCommand "py") {
-        return @{ Exe = (Get-Command py).Source; Args = @("-3") }
+    $tries = New-Object System.Collections.Generic.List[object]
+
+    foreach ($p in @(
+            "$env:LocalAppData\Programs\Python\Python312\python.exe",
+            "$env:LocalAppData\Programs\Python\Python313\python.exe",
+            "$env:LocalAppData\Programs\Python\Python311\python.exe",
+            "$env:LocalAppData\Programs\Python\Python310\python.exe",
+            "$env:ProgramFiles\Python312\python.exe",
+            "$env:ProgramFiles\Python313\python.exe",
+            "$env:ProgramFiles\Python311\python.exe",
+            "$env:ProgramFiles\Python310\python.exe"
+        )) {
+        if ($p -and (Test-Path $p)) { $tries.Add(@{ Exe = $p; Args = @() }) }
     }
-    foreach ($name in @("python", "python3")) {
-        if (Test-RealCommand $name) {
-            return @{ Exe = (Get-Command $name).Source; Args = @() }
+
+    if (Test-RealCommand "py") {
+        $pyExe = (Get-Command py).Source
+        foreach ($arg in @("-3.12", "-3.13", "-3.11", "-3.10")) {
+            $tries.Add(@{ Exe = $pyExe; Args = @($arg) })
         }
     }
-    $candidates = @(
-        "$env:LocalAppData\Programs\Python\Python312\python.exe",
-        "$env:LocalAppData\Programs\Python\Python313\python.exe",
-        "$env:LocalAppData\Programs\Python\Python311\python.exe",
-        "$env:ProgramFiles\Python312\python.exe",
-        "$env:ProgramFiles\Python313\python.exe",
-        "$env:ProgramFiles\Python311\python.exe"
-    )
-    foreach ($p in $candidates) {
-        if ($p -and (Test-Path $p)) { return @{ Exe = $p; Args = @() } }
+
+    foreach ($name in @("python", "python3")) {
+        if (Test-RealCommand $name) {
+            $tries.Add(@{ Exe = (Get-Command $name).Source; Args = @() })
+        }
     }
+
     $pyHome = "$env:LocalAppData\Programs\Python"
     if (Test-Path $pyHome) {
         foreach ($dir in Get-ChildItem $pyHome -Directory -ErrorAction SilentlyContinue) {
             $p = Join-Path $dir.FullName "python.exe"
-            if (Test-Path $p) { return @{ Exe = $p; Args = @() } }
+            if (Test-Path $p) { $tries.Add(@{ Exe = $p; Args = @() }) }
         }
+    }
+
+    foreach ($info in $tries) {
+        if (Test-PythonNewEnough $info) { return $info }
     }
     return $null
 }
@@ -171,15 +198,19 @@ function Wait-For([scriptblock]$Probe, [string]$Label, [int]$Tries = 16) {
 function Ensure-Python {
     $py = Find-Python
     if ($py) {
-        Write-Log "Python: 이미 있음"
+        $v = Get-PythonVersion $py
+        Write-Log "Python $v 사용: $($py.Exe) $($py.Args -join ' ')"
         return $py
     }
-    Write-Log "Python이 없어 설치합니다."
+    Write-Log "Python 3.10+ 가 없습니다. (3.6 같은 오래된 건 쓰지 않습니다) 3.12를 설치합니다."
     Install-WingetId "Python.Python.3.12"
-    if (-not (Wait-For { $null -ne (Find-Python) } "Python")) {
-        Fail "Python을 찾지 못했습니다. start.ps1을 한 번 더 실행하세요."
+    if (-not (Wait-For { $null -ne (Find-Python) } "Python 3.12")) {
+        Fail "Python 3.12를 찾지 못했습니다. python.org 에서 3.12를 설치한 뒤 start.ps1을 다시 실행하세요."
     }
-    return (Find-Python)
+    $py = Find-Python
+    $v = Get-PythonVersion $py
+    Write-Log "Python $v 사용: $($py.Exe) $($py.Args -join ' ')"
+    return $py
 }
 
 function Ensure-Node {
@@ -309,6 +340,13 @@ try {
     }
     $venvPython = Join-Path $venvDir "Scripts\python.exe"
     New-Item -ItemType Directory -Force -Path (Split-Path $venvDir) | Out-Null
+    if (Test-Path $venvPython) {
+        $venvVer = Get-PythonVersion @{ Exe = $venvPython; Args = @() }
+        if (-not $venvVer -or $venvVer -lt [version]"3.10") {
+            Write-Log "가상환경 Python($venvVer)이 오래되어 지우고 다시 만듭니다."
+            Remove-Item -Recurse -Force $venvDir -ErrorAction SilentlyContinue
+        }
+    }
     if (-not (Test-Path $venvPython)) {
         Write-Log "Python 가상환경 생성: $venvDir"
         & $py.Exe @($py.Args + @("-m", "venv", $venvDir))
