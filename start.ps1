@@ -1,5 +1,8 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 $ErrorActionPreference = "Continue"
+try { chcp 65001 | Out-Null } catch {}
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+$OutputEncoding = [Console]::OutputEncoding
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 Get-ChildItem -LiteralPath $Root -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
@@ -174,7 +177,7 @@ function Ensure-Python {
     Write-Log "Python이 없어 설치합니다."
     Install-WingetId "Python.Python.3.12"
     if (-not (Wait-For { $null -ne (Find-Python) } "Python")) {
-        Fail "Python을 찾지 못했습니다. start.bat을 한 번 더 실행하세요."
+        Fail "Python을 찾지 못했습니다. start.ps1을 한 번 더 실행하세요."
     }
     return (Find-Python)
 }
@@ -187,7 +190,7 @@ function Ensure-Node {
     Write-Log "Node.js가 없어 설치합니다."
     Install-WingetId "OpenJS.NodeJS.LTS"
     if (-not (Wait-For { $null -ne (Find-Node) } "Node.js")) {
-        Fail "Node.js를 찾지 못했습니다. start.bat을 한 번 더 실행하세요."
+        Fail "Node.js를 찾지 못했습니다. start.ps1을 한 번 더 실행하세요."
     }
 }
 
@@ -294,21 +297,20 @@ try {
         }
     }
 
-    Invoke-Checked { & $venvPython -m pip install --upgrade pip } "pip 준비"
-    Invoke-Checked { & $venvPython -m pip install -r (Join-Path $Root "backend\requirements.txt") } "Python 패키지"
+    Write-Log "Python 패키지 설치 중..."
+    & $venvPython -m pip install -r (Join-Path $Root "backend\requirements.txt") --disable-pip-version-check
+    if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { Fail "Python 패키지 설치 실패" }
 
     Refresh-Path
-    Push-Location (Join-Path $Root "frontend")
-    try {
-        Write-Log "Node 패키지"
-        cmd /c "npm install"
-        if ($LASTEXITCODE -ne 0) { Fail "npm install 실패" }
-    } finally {
-        Pop-Location
-    }
-
     $npm = Find-Npm
-    if (-not $npm) { Fail "npm을 찾지 못했습니다. start.bat을 한 번 더 실행하세요." }
+    if (-not $npm) { Fail "npm을 찾지 못했습니다. start.ps1을 한 번 더 실행하세요." }
+    $nodeDir = Split-Path $npm
+    $env:Path = "$nodeDir;$env:Path"
+
+    $feDir = Join-Path $Root "frontend"
+    Write-Log "Node 패키지 설치 중..."
+    $npmInstall = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", "`"$npm`" install") -WorkingDirectory $feDir -Wait -PassThru -NoNewWindow
+    if ($npmInstall.ExitCode -ne 0) { Fail "npm install 실패" }
 
     Stop-Port 8000
     Stop-Port 5173
@@ -317,9 +319,7 @@ try {
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     $backendOut = Join-Path $logDir "backend.out.log"
     $backendErr = Join-Path $logDir "backend.err.log"
-    $frontOut = Join-Path $logDir "frontend.out.log"
-    $frontErr = Join-Path $logDir "frontend.err.log"
-    Remove-Item $backendOut, $backendErr, $frontOut, $frontErr -ErrorAction SilentlyContinue
+    Remove-Item $backendOut, $backendErr -ErrorAction SilentlyContinue
 
     Write-Log "백엔드 시작"
     $backend = Start-Process -FilePath $venvPython -ArgumentList @(
@@ -329,33 +329,35 @@ try {
         -RedirectStandardOutput $backendOut -RedirectStandardError $backendErr
 
     Write-Log "프론트 시작"
-    $frontend = Start-Process -FilePath $npm -ArgumentList @("run", "dev") `
-        -WorkingDirectory (Join-Path $Root "frontend") -PassThru -WindowStyle Hidden `
-        -RedirectStandardOutput $frontOut -RedirectStandardError $frontErr
+    $frontend = Start-Process -FilePath "cmd.exe" -ArgumentList @(
+        "/c", "set `"PATH=$nodeDir;%PATH%`" && `"$npm`" run dev"
+    ) -WorkingDirectory $feDir -PassThru -WindowStyle Minimized
 
     Write-Log "서버 응답 대기"
-    $ok = $false
+    $site = ""
     for ($i = 0; $i -lt 90; $i++) {
-        if ((Test-Http "http://127.0.0.1:8000/api/health") -and (Test-Http "http://localhost:5173/")) {
-            $ok = $true
-            break
+        $back = Test-Http "http://127.0.0.1:8000/api/health"
+        if (Test-Http "http://localhost:5173/") { $site = "http://localhost:5173/" }
+        elseif (Test-Http "http://127.0.0.1:5173/") { $site = "http://127.0.0.1:5173/" }
+        if ($back -and $site) { break }
+        if ($backend.HasExited) {
+            if (Test-Path $backendErr) { Get-Content $backendErr -Tail 30 | ForEach-Object { Write-Log $_ } }
+            Fail "백엔드가 바로 종료되었습니다. data\logs\backend.err.log 를 확인하세요."
         }
-        if ($backend.HasExited -or $frontend.HasExited) { break }
         Start-Sleep -Milliseconds 700
     }
 
-    if (-not $ok) {
-        Write-Log "백엔드 로그: $backendErr"
-        Write-Log "프론트 로그: $frontErr"
-        if (Test-Path $backendErr) { Get-Content $backendErr -Tail 20 | ForEach-Object { Write-Log $_ } }
-        if (Test-Path $frontErr) { Get-Content $frontErr -Tail 20 | ForEach-Object { Write-Log $_ } }
-        Fail "서버가 켜지지 않았습니다. data\\logs 를 확인하세요."
+    if (-not $site) {
+        Fail "화면 서버가 켜지지 않았습니다. 다시 start.ps1 을 실행하세요."
+    }
+    if (-not (Test-Http "http://127.0.0.1:8000/api/health")) {
+        Write-Log "백엔드는 아직 느릴 수 있습니다. 화면은 먼저 엽니다."
     }
 
-    Start-Process "http://localhost:5173/"
-    Write-Log "nas-note 켜짐: http://localhost:5173/"
-    Write-Host "브라우저가 안 열리면 주소창에 http://localhost:5173/ 을 넣으세요."
-    Write-Host "끌 때는 같은 폴더의 stop.bat 을 더블클릭하세요."
+    Start-Process $site
+    Write-Log "nas-note 켜짐: $site"
+    Write-Host "브라우저가 안 열리면 주소창에 $site 을 넣으세요."
+    Write-Host "끌 때는 같은 폴더의 stop.ps1 을 실행하세요."
 } catch {
     Write-Log $_.Exception.Message
     Write-Host "실패했습니다. start.log 또는 data\logs 를 확인하세요."

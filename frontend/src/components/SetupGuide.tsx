@@ -33,9 +33,8 @@ export function SetupGuide() {
 
         <p className="guide-h">다른 컴퓨터에서</p>
         <p>
-          ZIP은 받지 마세요. GitHub에서 <code>git clone</code> 한 뒤{" "}
-          <code>powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1</code> 만 실행합니다.
-          사이트는 <code>http://localhost:5173/</code> 입니다.
+          ZIP은 받지 마세요. GitHub에서 바탕화면 <code>nas-note</code>로 <code>git clone</code> 한 뒤{" "}
+          <code>start.ps1</code>을 실행합니다. 사이트는 <code>http://localhost:5173/</code> 입니다.
         </p>
 
         <p className="guide-h">1. Cursor / VS Code에서 .env 만들기</p>
