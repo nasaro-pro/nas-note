@@ -60,20 +60,24 @@ function Find-Python {
             return @{ Exe = (Get-Command $name).Source; Args = @() }
         }
     }
-    $hits = @()
-    foreach ($base in @(
-            "$env:LocalAppData\Programs\Python",
-            "$env:ProgramFiles",
-            "${env:ProgramFiles(x86)}"
-        )) {
-        if (Test-Path $base) {
-            $hits += Get-ChildItem $base -Filter python.exe -Recurse -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -notmatch "WindowsApps|Miniconda|Anaconda" } |
-                Select-Object -First 8
+    $candidates = @(
+        "$env:LocalAppData\Programs\Python\Python312\python.exe",
+        "$env:LocalAppData\Programs\Python\Python313\python.exe",
+        "$env:LocalAppData\Programs\Python\Python311\python.exe",
+        "$env:ProgramFiles\Python312\python.exe",
+        "$env:ProgramFiles\Python313\python.exe",
+        "$env:ProgramFiles\Python311\python.exe"
+    )
+    foreach ($p in $candidates) {
+        if ($p -and (Test-Path $p)) { return @{ Exe = $p; Args = @() } }
+    }
+    $pyHome = "$env:LocalAppData\Programs\Python"
+    if (Test-Path $pyHome) {
+        foreach ($dir in Get-ChildItem $pyHome -Directory -ErrorAction SilentlyContinue) {
+            $p = Join-Path $dir.FullName "python.exe"
+            if (Test-Path $p) { return @{ Exe = $p; Args = @() } }
         }
     }
-    $exe = $hits | Select-Object -First 1
-    if ($exe) { return @{ Exe = $exe.FullName; Args = @() } }
     return $null
 }
 
@@ -122,8 +126,10 @@ function Find-Ffmpeg {
     }
     $wingetRoot = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages"
     if (Test-Path $wingetRoot) {
-        $hit = Get-ChildItem $wingetRoot -Filter ffmpeg.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
+        foreach ($dir in Get-ChildItem $wingetRoot -Directory -Filter "Gyan.FFmpeg*" -ErrorAction SilentlyContinue) {
+            $hit = Get-ChildItem $dir.FullName -Filter ffmpeg.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) { return $hit.FullName }
+        }
     }
     return $null
 }
@@ -194,9 +200,10 @@ function Ensure-Ffmpeg {
         return
     }
     Write-Log "FFmpeg가 없어 설치합니다."
-    Install-WingetId "Gyan.FFmpeg"
-    if (-not (Wait-For { $null -ne (Find-Ffmpeg) } "FFmpeg")) {
-        Fail "FFmpeg를 찾지 못했습니다. start.bat을 한 번 더 실행하세요."
+    try { Install-WingetId "Gyan.FFmpeg" } catch { Write-Log $_.Exception.Message }
+    if (-not (Wait-For { $null -ne (Find-Ffmpeg) } "FFmpeg" 8)) {
+        Write-Log "FFmpeg는 나중에 설치해도 됩니다. 사이트는 먼저 켭니다."
+        return
     }
     $exe = Find-Ffmpeg
     if ($exe) {
@@ -271,6 +278,7 @@ function Invoke-Checked([scriptblock]$Cmd, [string]$Label) {
 
 $script:failed = $false
 try {
+    Write-Host "nas-note 시작합니다. 처음이면 몇 분 걸릴 수 있습니다."
     Write-Log "=== nas-note 준비 ==="
     $py = Ensure-Python
     Ensure-Node
