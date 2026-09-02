@@ -2,6 +2,7 @@
 $ErrorActionPreference = "Continue"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
+Get-ChildItem -LiteralPath $Root -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
 $LogFile = Join-Path $Root "start.log"
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"

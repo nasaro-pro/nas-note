@@ -33,9 +33,9 @@ export function SetupGuide() {
 
         <p className="guide-h">다른 컴퓨터에서</p>
         <p>
-          ZIP을 받거나 clone 한 뒤 <code>start.bat</code>만 더블클릭하면 됩니다. Python, Node.js, FFmpeg가 없으면
-          설치하고, 키는 나중에 넣어도 사이트는 <code>http://localhost:5173/</code> 로 열립니다. 바탕 화면·원드라이브·한글
-          폴더여도 됩니다.
+          가능하면 ZIP보다 <code>git clone</code> 하세요. ZIP은 Windows가 <code>start.bat</code>을 차단할 수 있습니다.
+          차단되면 <code>start.bat</code> 우클릭 → 속성 → 아래쪽 <strong>차단 해제</strong> → 확인 후 다시 더블클릭합니다.
+          그다음 Python / Node / FFmpeg가 없으면 설치하고, 사이트는 <code>http://localhost:5173/</code> 로 열립니다.
         </p>
 
         <p className="guide-h">1. Cursor / VS Code에서 .env 만들기</p>
