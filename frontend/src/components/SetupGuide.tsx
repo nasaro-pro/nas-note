@@ -33,10 +33,9 @@ export function SetupGuide() {
 
         <p className="guide-h">다른 컴퓨터에서</p>
         <p>
-          가능하면 ZIP보다 <code>git clone</code> 하세요. ZIP은 Windows가 <code>start.bat</code>을 차단할 수 있습니다.
-          차단되면 <code>start.bat</code> 우클릭 → 속성 → 아래쪽 <strong>차단 해제</strong> → 확인 후 다시 더블클릭합니다.
-          그다음 Python / Node / FFmpeg가 없으면 설치하고, 사이트는 <code>http://localhost:5173/</code> 로 열립니다.
-          끌 때는 <code>stop.bat</code>을 실행합니다.
+          ZIP은 받지 마세요. GitHub에서 <code>git clone</code> 한 뒤{" "}
+          <code>powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1</code> 만 실행합니다.
+          사이트는 <code>http://localhost:5173/</code> 입니다.
         </p>
 
         <p className="guide-h">1. Cursor / VS Code에서 .env 만들기</p>
