@@ -37,7 +37,9 @@ function Refresh-Path {
         "$env:ProgramFiles\nodejs",
         "$env:ProgramFiles\ffmpeg\bin",
         "${env:ProgramFiles(x86)}\ffmpeg\bin",
-        "C:\ffmpeg\bin"
+        "C:\ffmpeg\bin",
+        "C:\Program Files\Git\cmd",
+        "C:\Program Files\Git\bin"
     )
     foreach ($dir in $extra) {
         if ($dir -and (Test-Path $dir)) {

@@ -33,11 +33,11 @@ export function SetupGuide() {
 
         <p className="guide-h">다른 컴퓨터에서</p>
         <p>
-          ZIP은 받지 마세요. 바탕화면에 빈 폴더를 만들고, 그 안에서 PowerShell을 연 뒤 아래 한 줄만
+          Git이 없어도 됩니다. 바탕화면에 빈 폴더를 만들고, 그 안에서 PowerShell을 연 뒤 아래 한 줄만
           붙여넣습니다. 코드는 그 폴더에 들어가고, 끝나면 사이트가 자동으로 열립니다.{" "}
           <code>http://localhost:5173/</code>
         </p>
-        <pre className="env-sample">{`if (-not (Test-Path -LiteralPath .\\start.ps1)) { git clone https://github.com/nasaro-pro/nas-note.git . } else { git fetch origin; git reset --hard origin/main }; powershell -NoProfile -ExecutionPolicy Bypass -File .\\start.ps1`}</pre>
+        <pre className="env-sample">{`[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; iex (irm https://raw.githubusercontent.com/nasaro-pro/nas-note/main/bootstrap.ps1)`}</pre>
 
         <p className="guide-h">1. Cursor / VS Code에서 .env 만들기</p>
         <ol>

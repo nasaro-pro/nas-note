@@ -2,7 +2,7 @@
 
 이 컴퓨터에서만 도는 사이트입니다. 주소는 **http://localhost:5173/** 입니다.
 
-ZIP으로 받지 마세요. **빈 폴더**에서 GitHub `git clone`을 하면 그 폴더 안에 코드가 들어갑니다.
+Git이 없어도 됩니다. **빈 폴더**에서 아래 한 줄만 붙여넣으면 코드를 받고 사이트를 켭니다.
 
 ## 다른 노트북
 
@@ -11,7 +11,7 @@ ZIP으로 받지 마세요. **빈 폴더**에서 GitHub `git clone`을 하면 �
 3. **아래 박스 안만** 붙여넣는다. `PS C:\...>` 는 넣지 않는다.
 
 ```
-if (-not (Test-Path -LiteralPath .\start.ps1)) { git clone https://github.com/nasaro-pro/nas-note.git . } else { git fetch origin; git reset --hard origin/main }; powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; iex (irm https://raw.githubusercontent.com/nasaro-pro/nas-note/main/bootstrap.ps1)
 ```
 
 처음이면 몇 분 걸릴 수 있습니다. 끝나면 브라우저가 열리고 바로 쓰면 됩니다. 안 열리면 **http://localhost:5173/** 을 주소창에 넣습니다.
