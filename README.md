@@ -6,11 +6,11 @@
 
 1. 가능하면 ZIP 대신 `git clone` 한다. ZIP은 Windows가 `start.bat`을 차단하는 경우가 많다.
 2. 폴더 안의 **`start.bat`을 더블클릭**한다.
-3. 처음이면 Python / Node / FFmpeg를 알아서 설치한다. Wi-Fi가 필요하다.
-4. 키가 없으면 창에서 물어본다. Enter로 건너뛰어도 사이트는 열린다.
-5. 브라우저가 **http://localhost:5173/** 로 열린다.
+3. 처음이면 Python / Node / FFmpeg를 알아서 설치한다. Wi-Fi가 필요하다. 몇 분 걸릴 수 있다.
+4. 끝나면 브라우저가 **http://localhost:5173/** 로 열린다. 안 열리면 주소창에 직접 넣는다.
+5. `start.bat` 창은 켜 둬도 되고 닫아도 사이트는 유지된다.
 
-끝낼 때는 `start.bat` 검은 창에서 아무 키나 누른다.
+끌 때는 같은 폴더의 **`stop.bat`** 을 더블클릭한다.
 
 ### start.bat 이 차단되면
 

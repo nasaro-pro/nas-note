@@ -2,7 +2,7 @@
 $ErrorActionPreference = "Continue"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
-Get-ChildItem -LiteralPath $Root -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
+Get-ChildItem -LiteralPath $Root -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
 $LogFile = Join-Path $Root "start.log"
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
@@ -87,6 +87,26 @@ function Find-Node {
         if (Test-Path $p) { return $p }
     }
     return $null
+}
+
+function Find-Npm {
+    $node = Find-Node
+    if ($node) {
+        $npm = Join-Path (Split-Path $node) "npm.cmd"
+        if (Test-Path $npm) { return $npm }
+    }
+    $cmd = Get-Command "npm.cmd" -ErrorAction SilentlyContinue
+    if ($cmd -and "$($cmd.Source)" -notlike "*WindowsApps*") { return $cmd.Source }
+    return $null
+}
+
+function Test-Http([string]$Url) {
+    try {
+        $r = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2
+        return $r.StatusCode -eq 200
+    } catch {
+        return $false
+    }
 }
 
 function Find-Ffmpeg {
@@ -216,25 +236,7 @@ function Ensure-EnvFile {
         }
     }
     if (-not $groq -or -not $gemini) {
-        Write-Log "API 키가 비어 있습니다. 사이트는 열고, 키는 .env 에 넣으면 업로드가 됩니다."
-        Write-Log "Groq: https://console.groq.com/keys"
-        Write-Log "Gemini: https://aistudio.google.com/apikey"
-        try {
-            if (-not $groq) {
-                $keyVal = Read-Host "GROQ_API_KEY (지금은 건너뛰려면 Enter)"
-                if ($keyVal) {
-                    Set-DotEnvKey $envPath "GROQ_API_KEY" $keyVal
-                }
-            }
-            if (-not $gemini) {
-                $keyVal = Read-Host "GEMINI_API_KEY (지금은 건너뛰려면 Enter)"
-                if ($keyVal) {
-                    Set-DotEnvKey $envPath "GEMINI_API_KEY" $keyVal
-                }
-            }
-        } catch {
-            Write-Log "키 입력을 건너뜁니다."
-        }
+        Write-Log "API 키가 비어 있습니다. 사이트는 먼저 엽니다. 키는 .env 에 넣으면 됩니다."
     } else {
         Write-Log "API 키: .env에서 확인됨 (값은 출력하지 않음)"
     }
@@ -297,50 +299,58 @@ try {
         Pop-Location
     }
 
+    $npm = Find-Npm
+    if (-not $npm) { Fail "npm을 찾지 못했습니다. start.bat을 한 번 더 실행하세요." }
+
     Stop-Port 8000
     Stop-Port 5173
+
+    $logDir = Join-Path $Root "data\logs"
+    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    $backendOut = Join-Path $logDir "backend.out.log"
+    $backendErr = Join-Path $logDir "backend.err.log"
+    $frontOut = Join-Path $logDir "frontend.out.log"
+    $frontErr = Join-Path $logDir "frontend.err.log"
+    Remove-Item $backendOut, $backendErr, $frontOut, $frontErr -ErrorAction SilentlyContinue
 
     Write-Log "백엔드 시작"
     $backend = Start-Process -FilePath $venvPython -ArgumentList @(
         "-m", "uvicorn", "backend.main:app",
         "--host", "127.0.0.1", "--port", "8000"
-    ) -WorkingDirectory $Root -PassThru -WindowStyle Minimized
+    ) -WorkingDirectory $Root -PassThru -WindowStyle Hidden `
+        -RedirectStandardOutput $backendOut -RedirectStandardError $backendErr
 
     Write-Log "프론트 시작"
-    $frontend = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", "npm run dev") -WorkingDirectory (Join-Path $Root "frontend") -PassThru -WindowStyle Minimized
+    $frontend = Start-Process -FilePath $npm -ArgumentList @("run", "dev") `
+        -WorkingDirectory (Join-Path $Root "frontend") -PassThru -WindowStyle Hidden `
+        -RedirectStandardOutput $frontOut -RedirectStandardError $frontErr
 
-    Write-Log "http://localhost:5173/ 응답 대기"
+    Write-Log "서버 응답 대기"
     $ok = $false
     for ($i = 0; $i -lt 90; $i++) {
-        try {
-            $r = Invoke-WebRequest -Uri "http://localhost:5173/api/health" -UseBasicParsing -TimeoutSec 2
-            if ($r.StatusCode -eq 200) { $ok = $true; break }
-        } catch {
-            Start-Sleep -Milliseconds 700
+        if ((Test-Http "http://127.0.0.1:8000/api/health") -and (Test-Http "http://localhost:5173/")) {
+            $ok = $true
+            break
         }
+        if ($backend.HasExited -or $frontend.HasExited) { break }
+        Start-Sleep -Milliseconds 700
+    }
+
+    if (-not $ok) {
+        Write-Log "백엔드 로그: $backendErr"
+        Write-Log "프론트 로그: $frontErr"
+        if (Test-Path $backendErr) { Get-Content $backendErr -Tail 20 | ForEach-Object { Write-Log $_ } }
+        if (Test-Path $frontErr) { Get-Content $frontErr -Tail 20 | ForEach-Object { Write-Log $_ } }
+        Fail "서버가 켜지지 않았습니다. data\\logs 를 확인하세요."
     }
 
     Start-Process "http://localhost:5173/"
-    Write-Host ""
-    Write-Host "nas-note: http://localhost:5173/"
-    if (-not $ok) {
-        Write-Log "아직 응답이 없으면 몇 초 뒤 새로고침하세요. 로그: start.log"
-    }
-    Write-Host "이 창을 닫으면 서버를 같이 종료합니다. 끝내려면 아무 키나 누르세요."
-    try {
-        [void][System.Console]::ReadKey($true)
-    } catch {
-        Start-Sleep -Seconds 86400
-    }
+    Write-Log "nas-note 켜짐: http://localhost:5173/"
+    Write-Host "브라우저가 안 열리면 주소창에 http://localhost:5173/ 을 넣으세요."
+    Write-Host "끌 때는 같은 폴더의 stop.bat 을 더블클릭하세요."
 } catch {
     Write-Log $_.Exception.Message
-    Write-Host "실패했습니다. start.log 를 확인하세요."
+    Write-Host "실패했습니다. start.log 또는 data\logs 를 확인하세요."
     $script:failed = $true
-} finally {
-    if ($backend -and -not $backend.HasExited) { Stop-Process -Id $backend.Id -Force -ErrorAction SilentlyContinue }
-    if ($frontend -and -not $frontend.HasExited) { Stop-Process -Id $frontend.Id -Force -ErrorAction SilentlyContinue }
-    Stop-Port 8000
-    Stop-Port 5173
-    Write-Log "종료했습니다."
 }
 if ($script:failed) { exit 1 }
