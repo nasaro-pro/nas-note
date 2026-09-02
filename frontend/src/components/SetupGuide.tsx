@@ -33,11 +33,11 @@ export function SetupGuide() {
 
         <p className="guide-h">다른 컴퓨터에서</p>
         <p>
-          ZIP은 받지 마세요. 빈 폴더에서 PowerShell을 연 뒤{" "}
-          <code>git clone https://github.com/nasaro-pro/nas-note.git .</code> 그리고{" "}
-          <code>start.ps1</code>을 실행합니다. 코드는 그 폴더에 들어갑니다. 사이트는{" "}
-          <code>http://localhost:5173/</code> 입니다.
+          ZIP은 받지 마세요. 바탕화면에 빈 폴더를 만들고, 그 안에서 PowerShell을 연 뒤 아래 한 줄만
+          붙여넣습니다. 코드는 그 폴더에 들어가고, 끝나면 사이트가 자동으로 열립니다.{" "}
+          <code>http://localhost:5173/</code>
         </p>
+        <pre className="env-sample">{`if (-not (Test-Path -LiteralPath .\\start.ps1)) { git clone https://github.com/nasaro-pro/nas-note.git . }; powershell -NoProfile -ExecutionPolicy Bypass -File .\\start.ps1`}</pre>
 
         <p className="guide-h">1. Cursor / VS Code에서 .env 만들기</p>
         <ol>

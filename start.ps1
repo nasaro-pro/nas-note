@@ -292,10 +292,25 @@ try {
     $env:TEMP = $env:TMP
     New-Item -ItemType Directory -Force -Path $env:TMP | Out-Null
 
-    $venvDir = Join-Path $Root "backend\.venv"
+    # 한글/공백 폴더(새 폴더, 바탕 화면)에서는 venv·pip가 자주 깨져서
+    # 가상환경은 영문 경로(%LOCALAPPDATA%\nas-note)에 만든다.
+    $hash = [BitConverter]::ToString(
+        [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+            [Text.Encoding]::UTF8.GetBytes($Root)
+        )
+    ).Replace("-", "").Substring(0, 16).ToLower()
+    $venvDir = Join-Path $env:LOCALAPPDATA "nas-note\venv-$hash"
+    $localVenv = Join-Path $Root "backend\.venv"
+    $localPy = Join-Path $localVenv "Scripts\python.exe"
+    $rootHasNonAscii = [regex]::IsMatch($Root, "[^\x00-\x7F]")
+    if (-not $rootHasNonAscii -and (Test-Path $localPy)) {
+        $venvDir = $localVenv
+        Write-Log "기존 backend\\.venv 를 사용합니다."
+    }
     $venvPython = Join-Path $venvDir "Scripts\python.exe"
+    New-Item -ItemType Directory -Force -Path (Split-Path $venvDir) | Out-Null
     if (-not (Test-Path $venvPython)) {
-        Write-Log "Python 가상환경 생성"
+        Write-Log "Python 가상환경 생성: $venvDir"
         & $py.Exe @($py.Args + @("-m", "venv", $venvDir))
         if (-not (Test-Path $venvPython)) {
             Fail "가상환경을 만들지 못했습니다."
@@ -303,21 +318,37 @@ try {
     }
 
     $req = Join-Path $Root "backend\requirements.txt"
-    Write-Log "pip 준비"
-    & $venvPython -m ensurepip --upgrade 2>$null
-    & $venvPython -m pip install --upgrade pip setuptools wheel --disable-pip-version-check
-    Write-Log "Python 패키지 설치 중..."
-    $pipOk = $false
-    foreach ($try in 1, 2) {
-        & $venvPython -m pip install -r $req --disable-pip-version-check --no-cache-dir --prefer-binary
-        if ($LASTEXITCODE -eq 0) { $pipOk = $true; break }
-        Write-Log "패키지 설치 재시도 $try"
-        Remove-Item -Recurse -Force $venvDir -ErrorAction SilentlyContinue
-        & $py.Exe @($py.Args + @("-m", "venv", $venvDir))
-        & $venvPython -m ensurepip --upgrade 2>$null
-        & $venvPython -m pip install --upgrade pip setuptools wheel --disable-pip-version-check
+    $reqAscii = Join-Path $env:TMP "nas-note-requirements.txt"
+    Copy-Item -LiteralPath $req -Destination $reqAscii -Force
+    function Invoke-NasNotePip {
+        param([string]$PythonExe)
+        Write-Log "pip 준비"
+        & $PythonExe -m ensurepip --upgrade 2>$null
+        $up = Start-Process -FilePath $PythonExe -ArgumentList @(
+            "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel",
+            "--disable-pip-version-check"
+        ) -Wait -PassThru -NoNewWindow
+        Write-Log "Python 패키지 설치 중..."
+        $inst = Start-Process -FilePath $PythonExe -ArgumentList @(
+            "-m", "pip", "install", "-r", $reqAscii,
+            "--disable-pip-version-check", "--no-cache-dir", "--prefer-binary"
+        ) -Wait -PassThru -NoNewWindow
+        if ($up.ExitCode -and $up.ExitCode -ne 0) { Write-Log "pip 업그레이드 경고: $($up.ExitCode)" }
+        return $inst.ExitCode
     }
-    if (-not $pipOk) { Fail "Python 패키지 설치 실패. 인터넷을 확인하고 start.ps1을 다시 실행하세요." }
+    $pipCode = Invoke-NasNotePip $venvPython
+    if ($pipCode -ne 0) {
+        Write-Log "패키지 설치 한 번 더 시도 (영문 경로에 가상환경 다시 만듦)"
+        $venvDir = Join-Path $env:LOCALAPPDATA "nas-note\venv-$hash"
+        $venvPython = Join-Path $venvDir "Scripts\python.exe"
+        Remove-Item -Recurse -Force $venvDir -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force -Path (Split-Path $venvDir) | Out-Null
+        & $py.Exe @($py.Args + @("-m", "venv", $venvDir))
+        $pipCode = Invoke-NasNotePip $venvPython
+    }
+    if ($pipCode -ne 0) {
+        Fail "Python 패키지 설치 실패. 인터넷을 확인하고 start.ps1을 다시 실행하세요."
+    }
 
     Refresh-Path
     $npm = Find-Npm
