@@ -33,9 +33,9 @@ export function SetupGuide() {
 
         <p className="guide-h">다른 컴퓨터에서</p>
         <p>
-          저장소를 받은 뒤 <code>start.bat</code>만 실행하면 됩니다. Python, Node.js, FFmpeg가 없으면
-          Wi-Fi로 설치하고, 키는 없을 때만 물어봅니다. 바탕 화면·원드라이브·한글 폴더여도 됩니다. 주소는{" "}
-          <code>http://localhost:5173/</code> 입니다.
+          ZIP을 받거나 clone 한 뒤 <code>start.bat</code>만 더블클릭하면 됩니다. Python, Node.js, FFmpeg가 없으면
+          설치하고, 키는 나중에 넣어도 사이트는 <code>http://localhost:5173/</code> 로 열립니다. 바탕 화면·원드라이브·한글
+          폴더여도 됩니다.
         </p>
 
         <p className="guide-h">1. Cursor / VS Code에서 .env 만들기</p>

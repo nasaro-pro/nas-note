@@ -14,3 +14,23 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+
+# not site code
+design-preview/
+docs/
+DESIGN.md
+SPEC.md
+
+# recordings / uploads must stay local
+*.mp4
+*.mkv
+*.webm
+*.mov
+*.avi
+*.mp3
+*.wav
+*.m4a
+*.flac
+*.ogg
+*.aac
+*.wma

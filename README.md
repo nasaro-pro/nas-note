@@ -1,36 +1,30 @@
 # nas-note
 
-긴 녹음/영상을 올리면 Groq Whisper로 텍스트를 잇고, Gemini로 학습 노트를 만든 뒤 날짜별로 로컬에 쌓아 사이트에서 바로 찾고 본다.
+이 컴퓨터에서만 도는 사이트입니다. 주소는 **http://localhost:5173/** 입니다.
 
-## 다른 Windows PC에서 (GitHub clone 후)
+## 다른 노트북에서
 
-1. 이 저장소를 받는다.
-2. **`start.bat`을 더블클릭**한다.
-   - Python / Node / FFmpeg가 있으면 건너뛴다.
-   - 없으면 Wi-Fi로 winget 설치한다.
-   - 패키지 설치 후 브라우저가 열린다.
-   - 폴더가 바탕 화면·OneDrive·한글 경로여도 된다.
-3. 그 PC에 `.env`가 없으면 키를 한 번만 물어본다. **키는 GitHub에 올리지 않는다.**
+1. GitHub에서 **Code → Download ZIP** 받아 압축을 풀거나, `git clone` 한다.
+2. 폴더 안의 **`start.bat`을 더블클릭**한다.
+3. 처음이면 Python / Node / FFmpeg를 알아서 설치한다. Wi-Fi가 필요하다.
+4. 키가 없으면 창에서 물어본다. Enter로 건너뛰어도 사이트는 열린다.
+5. 브라우저가 **http://localhost:5173/** 로 열린다.
 
-주소: http://localhost:5173/
+끝낼 때는 `start.bat` 검은 창에서 아무 키나 누른다.
 
-끝낼 때는 `start.bat` 창에서 아무 키나 누르면 서버가 같이 꺼진다.
+안 열리면 `start.bat`을 한 번 더 실행한다. 자세한 내용은 같은 폴더의 `start.log`를 본다.
 
-## 키 (.env)
+## 키
 
-이 컴퓨터의 키는 로컬 `.env`에만 있다. `.gitignore`로 커밋에서 빠진다.
+키는 GitHub에 올리지 않는다. 이 노트북 폴더의 `.env`에만 둔다.
 
-다른 컴퓨터에서는 처음 실행 때 붙여넣기:
-
-- Groq: https://console.groq.com/keys
+- Groq: https://console.groq.com/keys  (`gsk_` 로 시작)
 - Gemini: https://aistudio.google.com/apikey
 
-채팅·README·코드에 키를 다시 붙이지 말 것.
+`start.bat`이 `.env`를 만들어 주거나, `.env.example`을 복사해 `.env`로 바꿔도 된다.
 
-## 문서
+업로드·변환은 키가 있어야 한다. 화면만 보는 것은 키 없이도 된다.
 
-| 파일 | 내용 |
-|---|---|
-| [SPEC.md](SPEC.md) | 설계·계획 총정리 |
-| [docs/SITE_DESIGN.md](docs/SITE_DESIGN.md) | 화면 |
-| [docs/API_GROQ_GEMINI.md](docs/API_GROQ_GEMINI.md) | Groq / Gemini |
+## 올리지 않는 것
+
+목업, 설계 문서, 녹음/영상, `.env`, `data/` 는 저장소에 넣지 않는다. 사이트 코드만 둔다.
