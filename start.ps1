@@ -287,7 +287,7 @@ function Ensure-Python {
     $py = Find-Python
     if ($py) {
         $v = Get-PythonVersion $py
-        Write-Log "Python $v 사용: $($py.Exe) $($py.Args -join ' ')"
+        Write-Log "Python $v 사용: $($py.Exe) $($py.PyArgs -join ' ')"
         return $py
     }
     Write-Log "Python 3.10+ 가 없습니다. 3.14를 설치합니다."
@@ -300,7 +300,7 @@ function Ensure-Python {
     if (Wait-For { $null -ne (Find-Python) } "Python" 20) {
         $py = Find-Python
         $v = Get-PythonVersion $py
-        Write-Log "Python $v 사용: $($py.Exe) $($py.Args -join ' ')"
+        Write-Log "Python $v 사용: $($py.Exe) $($py.PyArgs -join ' ')"
         return $py
     }
     Write-Log "3.14를 못 찾아서 3.12를 설치합니다."
@@ -319,7 +319,7 @@ function Ensure-Python {
     }
     $py = Find-Python
     $v = Get-PythonVersion $py
-    Write-Log "Python $v 사용: $($py.Exe) $($py.Args -join ' ')"
+        Write-Log "Python $v 사용: $($py.Exe) $($py.PyArgs -join ' ')"
     return $py
 }
 
@@ -469,30 +469,41 @@ try {
     }
     if (-not (Test-Path $venvPython)) {
         Write-Log "Python 가상환경 생성: $venvDir"
-        & $py.Exe @($py.Args + @("-m", "venv", $venvDir))
+        $venvCreate = @()
+        if ($py.PyArgs) { $venvCreate += @($py.PyArgs) }
+        $venvCreate += @("-m", "venv", $venvDir)
+        & $py.Exe @venvCreate
         if (-not (Test-Path $venvPython)) {
             Fail "가상환경을 만들지 못했습니다."
         }
     }
 
     $req = Join-Path $Root "backend\requirements.txt"
+    if (-not (Test-Path -LiteralPath $req)) {
+        Fail "backend\requirements.txt 가 없습니다. git clone 이 끝난 폴더에서 실행하세요."
+    }
     $reqAscii = Join-Path $env:TMP "nas-note-requirements.txt"
     Copy-Item -LiteralPath $req -Destination $reqAscii -Force
     function Invoke-NasNotePip {
         param([string]$PythonExe)
-        Write-Log "pip 준비"
-        & $PythonExe -m ensurepip --upgrade 2>$null
-        $up = Start-Process -FilePath $PythonExe -ArgumentList @(
-            "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel",
-            "--disable-pip-version-check"
-        ) -Wait -PassThru -NoNewWindow
+        $venvVer = Get-PythonVersion @{ Exe = $PythonExe; PyArgs = @() }
+        Write-Log "pip 준비 (venv Python $venvVer)"
+        if (-not $venvVer -or $venvVer -lt [version]"3.10") { return 99 }
+        & $PythonExe -m ensurepip --upgrade
+        Write-Log "pip 업그레이드"
+        & $PythonExe -m pip install --upgrade pip setuptools wheel --disable-pip-version-check
         Write-Log "Python 패키지 설치 중..."
-        $inst = Start-Process -FilePath $PythonExe -ArgumentList @(
-            "-m", "pip", "install", "-r", $reqAscii,
-            "--disable-pip-version-check", "--no-cache-dir", "--prefer-binary"
-        ) -Wait -PassThru -NoNewWindow
-        if ($up.ExitCode -and $up.ExitCode -ne 0) { Write-Log "pip 업그레이드 경고: $($up.ExitCode)" }
-        return $inst.ExitCode
+        & $PythonExe -m pip install -r $reqAscii --disable-pip-version-check --prefer-binary
+        $code = $LASTEXITCODE
+        if ($null -eq $code) { $code = 1 }
+        if ($code -ne 0) {
+            Write-Log "pip 종료 코드 $code. trusted-host 로 다시 시도"
+            & $PythonExe -m pip install -r $reqAscii --disable-pip-version-check --prefer-binary `
+                --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org
+            $code = $LASTEXITCODE
+            if ($null -eq $code) { $code = 1 }
+        }
+        return $code
     }
     $pipCode = Invoke-NasNotePip $venvPython
     if ($pipCode -ne 0) {
@@ -501,11 +512,14 @@ try {
         $venvPython = Join-Path $venvDir "Scripts\python.exe"
         Remove-Item -Recurse -Force $venvDir -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Force -Path (Split-Path $venvDir) | Out-Null
-        & $py.Exe @($py.Args + @("-m", "venv", $venvDir))
+        $venvCreate = @()
+        if ($py.PyArgs) { $venvCreate += @($py.PyArgs) }
+        $venvCreate += @("-m", "venv", $venvDir)
+        & $py.Exe @venvCreate
         $pipCode = Invoke-NasNotePip $venvPython
     }
     if ($pipCode -ne 0) {
-        Fail "Python 패키지 설치 실패. 인터넷을 확인하고 start.ps1을 다시 실행하세요."
+        Fail "Python 패키지 설치 실패 (코드 $pipCode). 위 pip 에러를 확인하세요."
     }
 
     Refresh-Path
