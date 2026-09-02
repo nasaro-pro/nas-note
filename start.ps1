@@ -1,4 +1,5 @@
 ﻿#Requires -Version 5.1
+param([switch]$ProbePython)
 $ErrorActionPreference = "Continue"
 try { chcp 65001 | Out-Null } catch {}
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
@@ -55,9 +56,15 @@ function Test-RealCommand([string]$Name) {
 
 function Get-PythonVersion($info) {
     try {
-        $raw = & $info.Exe @($info.Args + @("-c", "import sys; print('%d.%d' % (sys.version_info[0], sys.version_info[1]))")) 2>$null
-        $line = @($raw | Where-Object { $_ -match "^\d+\.\d+" } | Select-Object -First 1)
-        if ($line) { return [version]$line.ToString().Trim() }
+        $exe = [string]$info.Exe
+        if (-not $exe) { $exe = [string]$info["Exe"] }
+        if (-not $exe -or ($exe -like "*WindowsApps*")) { return $null }
+        $code = "import sys; print(str(sys.version_info[0]) + chr(46) + str(sys.version_info[1]))"
+        $raw = & $exe -c $code
+        $text = ([string]$raw).Trim().Trim([char]0xFEFF)
+        if ($text -match "(\d+)\.(\d+)") {
+            return [version]($Matches[1] + "." + $Matches[2])
+        }
     } catch {}
     return $null
 }
@@ -68,16 +75,49 @@ function Test-PythonNewEnough($info) {
 }
 
 function Add-PythonTry($list, [string]$Exe, $PyArgs) {
-    if (-not $Exe -or -not (Test-Path -LiteralPath $Exe)) { return }
-    if ($Exe -like "*WindowsApps*") { return }
+    if (-not $Exe) { return }
+    try { $Exe = [IO.Path]::GetFullPath($Exe.Trim().Trim('"')) } catch { return }
+    if (-not (Test-Path -LiteralPath $Exe)) { return }
+    $name = [IO.Path]::GetFileName($Exe)
+    # Store python.exe 스텁은 가짜. py.exe 런처는 WindowsApps여도 실제 설치를 가리킨다.
+    if ($Exe -like "*WindowsApps*" -and $name -ne "py.exe") { return }
     $key = "$Exe|$($PyArgs -join ' ')"
-    if ($list | Where-Object { "$($_.Exe)|$($_.Args -join ' ')" -eq $key }) { return }
-    $list.Add(@{ Exe = $Exe; Args = @($PyArgs) })
+    if ($list | Where-Object { "$($_.Exe)|$($_.PyArgs -join ' ')" -eq $key }) { return }
+    $list.Add(@{ Exe = $Exe; PyArgs = @($PyArgs) })
+}
+
+function Find-PyLauncher {
+    foreach ($p in @(
+            "$env:LocalAppData\Python\bin\py.exe",
+            "$env:LocalAppData\Programs\Python\Launcher\py.exe",
+            "$env:SystemRoot\py.exe",
+            "C:\Windows\py.exe"
+        )) {
+        if ($p -and (Test-Path -LiteralPath $p)) { return $p }
+    }
+    return $null
 }
 
 function Find-Python {
     Refresh-Path
     $tries = New-Object System.Collections.Generic.List[object]
+
+    $launcher = Find-PyLauncher
+    if ($launcher) {
+        try {
+            $listFile = Join-Path $env:TEMP "nas-note-py0p.txt"
+            $p0 = Start-Process -FilePath $launcher -ArgumentList @("-0p") -Wait -PassThru -WindowStyle Hidden `
+                -RedirectStandardOutput $listFile -RedirectStandardError "$listFile.err"
+            if (Test-Path $listFile) {
+                foreach ($line in Get-Content $listFile -ErrorAction SilentlyContinue) {
+                    if ("$line" -match '(?i)([a-z]:\\[^\r\n]*python\.exe)') {
+                        Add-PythonTry $tries $Matches[1] @()
+                    }
+                }
+            }
+            Remove-Item $listFile, "$listFile.err" -ErrorAction SilentlyContinue
+        } catch {}
+    }
 
     foreach ($p in @(
             "$env:LocalAppData\Python\pythoncore-3.14-64\python.exe",
@@ -128,7 +168,8 @@ function Find-Python {
             "${env:ProgramFiles(x86)}\Python"
         )) {
         if (-not (Test-Path $pySearchRoot)) { continue }
-        foreach ($hit in Get-ChildItem $pySearchRoot -Filter python.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20) {
+        foreach ($hit in Get-ChildItem $pySearchRoot -Filter python.exe -Recurse -ErrorAction SilentlyContinue) {
+            if ($hit.FullName -match "\\Lib\\venv\\") { continue }
             Add-PythonTry $tries $hit.FullName @()
         }
     }
@@ -140,36 +181,22 @@ function Find-Python {
             if ($hit) { Add-PythonTry $tries $hit.FullName @() }
         }
     }
-
-    foreach ($launcher in @(
-            "$env:LocalAppData\Programs\Python\Launcher\py.exe",
-            "$env:SystemRoot\py.exe",
-            "C:\Windows\py.exe"
-        )) {
-        if (Test-Path $launcher) {
-            foreach ($arg in @("-3.14", "-3.13", "-3.12", "-3.11", "-3.10")) {
-                Add-PythonTry $tries $launcher @($arg)
-            }
-        }
-    }
-
-    if (Test-RealCommand "py") {
-        $pyExe = (Get-Command py).Source
-        foreach ($arg in @("-3.14", "-3.13", "-3.12", "-3.11", "-3.10")) {
-            Add-PythonTry $tries $pyExe @($arg)
-        }
-    }
-
-    foreach ($name in @("python", "python3")) {
-        if (Test-RealCommand $name) {
-            Add-PythonTry $tries (Get-Command $name).Source @()
-        }
-    }
-
+    $best = $null
+    $bestVer = [version]"0.0"
+    Write-Log "Python 후보 $($tries.Count)개"
     foreach ($info in $tries) {
-        if (Test-PythonNewEnough $info) { return $info }
+        $v = Get-PythonVersion $info
+        if (-not $v) { continue }
+        if ($v -lt [version]"3.10") {
+            Write-Log "오래된 Python $v 건너뜀: $($info.Exe)"
+            continue
+        }
+        if ($v -gt $bestVer) {
+            $best = $info
+            $bestVer = $v
+        }
     }
-    return $null
+    return $best
 }
 
 function Find-Node {
@@ -263,10 +290,32 @@ function Ensure-Python {
         Write-Log "Python $v 사용: $($py.Exe) $($py.Args -join ' ')"
         return $py
     }
-    Write-Log "Python 3.10+ 가 없습니다. (3.6 같은 오래된 건 쓰지 않습니다) 3.14를 설치합니다."
+    Write-Log "Python 3.10+ 가 없습니다. 3.14를 설치합니다."
     Install-WingetId "Python.Python.3.14"
-    if (-not (Wait-For { $null -ne (Find-Python) } "Python 3.14" 30)) {
-        Fail "Python 3.14를 찾지 못했습니다. PowerShell을 닫고 다시 연 다음 start.ps1을 실행하세요."
+    $launcher = Find-PyLauncher
+    if ($launcher) {
+        Write-Log "py install 3.14"
+        & $launcher install 3.14 2>$null
+    }
+    if (Wait-For { $null -ne (Find-Python) } "Python" 20) {
+        $py = Find-Python
+        $v = Get-PythonVersion $py
+        Write-Log "Python $v 사용: $($py.Exe) $($py.Args -join ' ')"
+        return $py
+    }
+    Write-Log "3.14를 못 찾아서 3.12를 설치합니다."
+    Install-WingetId "Python.Python.3.12"
+    if ($launcher -or ($launcher = Find-PyLauncher)) {
+        Write-Log "py install 3.12"
+        & $launcher install 3.12 2>$null
+    }
+    if (-not (Wait-For { $null -ne (Find-Python) } "Python" 20)) {
+        $dump = Find-PyLauncher
+        if ($dump) {
+            Write-Log "py -0p:"
+            & $dump -0p 2>&1 | ForEach-Object { Write-Log "  $_" }
+        }
+        Fail "Python 3.10+ 를 찾지 못했습니다. python.org 에서 3.14 또는 3.12를 설치하세요."
     }
     $py = Find-Python
     $v = Get-PythonVersion $py
@@ -369,6 +418,16 @@ function Invoke-Checked([scriptblock]$Cmd, [string]$Label) {
     if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         Fail "$Label 실패 (코드 $LASTEXITCODE)"
     }
+}
+
+if ($ProbePython) {
+    $p = Find-Python
+    if ($p) {
+        Write-Host ("FOUND " + (Get-PythonVersion $p) + " " + $p.Exe)
+        exit 0
+    }
+    Write-Host "FOUND none"
+    exit 1
 }
 
 $script:failed = $false
