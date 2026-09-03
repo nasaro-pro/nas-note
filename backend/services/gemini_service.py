@@ -111,6 +111,7 @@ _MIME = {
     ".flac": "audio/flac",
     ".ogg": "audio/ogg",
     ".webm": "video/webm",
+    ".weba": "audio/webm",
 }
 
 

@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from backend.config import settings
 from backend.database import db
 from backend.textfmt import as_str_list, unescape_text
 from backend.services.audio_service import ffmpeg_ok, probe
+from backend.services import record_service
 from backend.storage import project_storage as store
 from backend.workers.processing_worker import retry_project, worker
 
@@ -72,6 +75,24 @@ async def health() -> dict:
     }
 
 
+@router.post("/record/start")
+async def record_start() -> dict:
+    try:
+        await asyncio.to_thread(record_service.start)
+    except record_service.RecordError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return {"ok": True}
+
+
+@router.post("/record/stop")
+async def record_stop() -> Response:
+    try:
+        data = await asyncio.to_thread(record_service.stop)
+    except record_service.RecordError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return Response(content=data, media_type="audio/wav")
+
+
 @router.post("/projects", status_code=201)
 async def create_project(
     file: UploadFile = File(...),
@@ -89,7 +110,7 @@ async def create_project(
         name = "audio"
     ext = Path(name).suffix.lower()
     if ext not in ALLOWED:
-        raise HTTPException(400, "MP3, WAV, M4A, MP4만 올릴 수 있습니다.")
+        raise HTTPException(400, "MP3, WAV, M4A, MP4, WEBM, OGG만 올릴 수 있습니다.")
     data = await file.read()
     if not data:
         raise HTTPException(400, "파일이 비어 있습니다")

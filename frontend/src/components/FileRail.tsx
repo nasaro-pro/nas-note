@@ -16,14 +16,16 @@ function groupByDate(items: Project[]): { date: string; items: Project[] }[] {
 
 export function FileRail({ onClose }: { onClose: () => void }) {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [loadErr, setLoadErr] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
   async function load() {
     try {
       setProjects(await api.projects());
+      setLoadErr(false);
     } catch {
-      /* rail stays as last good list */
+      setLoadErr(true);
     }
   }
 
@@ -47,7 +49,9 @@ export function FileRail({ onClose }: { onClose: () => void }) {
       </div>
       <p className="caption muted rail-hint">프로젝트를 누르면 가운데에 내용이 열립니다.</p>
       {projects.length === 0 ? (
-        <p className="caption muted">아직 저장된 파일이 없습니다.</p>
+        <p className="caption muted">
+          {loadErr ? "목록을 불러오지 못했습니다." : "아직 저장된 파일이 없습니다."}
+        </p>
       ) : null}
       {groups.map((g) => (
         <div key={g.date} className="rail-date">

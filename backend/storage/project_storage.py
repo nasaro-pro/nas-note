@@ -8,7 +8,7 @@ from pathlib import Path
 
 from backend.config import settings
 
-ALLOWED_EXT = {".mp3", ".wav", ".m4a", ".mp4"}
+ALLOWED_EXT = {".mp3", ".wav", ".m4a", ".mp4", ".webm", ".ogg", ".weba"}
 AUDIO_EXT = ALLOWED_EXT | {".flac"}
 
 

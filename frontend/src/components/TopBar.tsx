@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { FolderClosed, PenLine, Search } from "lucide-react";
+import { FolderClosed, Mic, PenLine, Search } from "lucide-react";
 import { useLayout } from "../layout";
 
 export function TopBar() {
@@ -52,6 +52,10 @@ export function TopBar() {
           />
         </form>
       ) : null}
+      <Link className="btn btn-secondary" to="/upload?mode=record">
+        <Mic size={18} />
+        녹음
+      </Link>
       <Link className="btn btn-primary" to="/upload">
         새 분석
       </Link>

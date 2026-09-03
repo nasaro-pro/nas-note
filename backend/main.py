@@ -6,6 +6,7 @@ from logging.handlers import RotatingFileHandler
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from backend.config import settings
 from backend.database.db import init_db
@@ -42,7 +43,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="nas-note", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://[::1]:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,3 +55,14 @@ app.add_middleware(
 app.include_router(projects_router, prefix="/api")
 app.include_router(search_router, prefix="/api")
 app.include_router(notes_router, prefix="/api")
+
+
+@app.get("/", response_class=HTMLResponse)
+def root() -> str:
+    return (
+        '<!doctype html><meta charset="utf-8">'
+        '<meta http-equiv="refresh" content="0;url=http://localhost:5173/">'
+        "<p>nas-note 화면은 "
+        '<a href="http://localhost:5173/">http://localhost:5173/</a>'
+        " 입니다.</p>"
+    )

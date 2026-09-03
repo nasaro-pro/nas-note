@@ -22,7 +22,10 @@ export function HomePage() {
         setProjects(p);
         setDown(false);
       } catch {
-        if (!stop) setDown(true);
+        if (!stop) {
+          setDown(true);
+          setProjects((prev) => prev ?? []);
+        }
       }
     }
 
@@ -57,7 +60,15 @@ export function HomePage() {
             <p className="sub">이 컴퓨터에만 남는 개인 정리 노트. 긴 녹음은 텍스트와 요약까지 자동으로 끝납니다.</p>
           </div>
           {projects && projects.length > 0 ? (
-            <p className="caption">{projects.length}개 프로젝트</p>
+            <div className="rec-actions">
+              <p className="caption">{projects.length}개 프로젝트</p>
+              <Link className="btn btn-secondary" to="/upload?mode=record">
+                녹음
+              </Link>
+              <Link className="btn btn-primary" to="/upload">
+                새 분석
+              </Link>
+            </div>
           ) : null}
         </div>
         {down ? (
@@ -80,9 +91,14 @@ export function HomePage() {
             <FileAudio className="icon" />
             <h2>아직 분석한 녹음이 없습니다</h2>
             <p>3~4시간 파일이어도 업로드하면 분할, 전사, 요약까지 자동으로 진행됩니다.</p>
-            <Link className="btn btn-primary" to="/upload">
-              첫 녹음 올리기
-            </Link>
+            <div className="rec-actions" style={{ justifyContent: "center" }}>
+              <Link className="btn btn-primary" to="/upload?mode=file">
+                첫 녹음 올리기
+              </Link>
+              <Link className="btn btn-secondary" to="/upload?mode=record">
+                녹음하기
+              </Link>
+            </div>
           </div>
         ) : null}
 

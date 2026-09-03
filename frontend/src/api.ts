@@ -48,6 +48,15 @@ export const api = {
     body.append("title", title);
     return req<{ id: number; status: string }>("/api/projects", { method: "POST", body });
   },
+  recordStart: () => req<{ ok: boolean }>("/api/record/start", { method: "POST" }),
+  recordStop: async () => {
+    const res = await fetch("/api/record/stop", { method: "POST" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(errorMessage(data, res.status));
+    }
+    return res.blob();
+  },
   notes: () => req<Note[]>("/api/notes"),
   createNote: () => req<Note>("/api/notes", { method: "POST" }),
   saveNote: (id: string, body: { title?: string; body?: string }) =>
