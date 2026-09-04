@@ -167,6 +167,28 @@ def _model_unavailable(exc: Exception) -> bool:
     return any(s in msg for s in ("404", "not_found", "not found", "no longer available"))
 
 
+def _transient_gemini(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(
+        s in msg
+        for s in (
+            "failed to fetch",
+            "connect",
+            "timeout",
+            "timed out",
+            "ssl",
+            "proxy",
+            "unavailable",
+            "502",
+            "503",
+            "connection reset",
+            "getaddrinfo",
+            "temporarily",
+            "network",
+        )
+    )
+
+
 def _config_for(schema_cls: type, system: str, types: object):
     config_kwargs: dict = {
         "temperature": 0.2,
@@ -302,6 +324,7 @@ def _generate_json(
             msg = str(exc).lower()
             if (
                 _model_unavailable(exc)
+                or _transient_gemini(exc)
                 or "not supported" in msg
                 or "inline" in msg
                 or "429" in msg

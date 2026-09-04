@@ -190,7 +190,7 @@ async def process_project(project_id: int) -> None:
     status = row["status"]
 
     try:
-        duration, size = probe(original)
+        duration, size = await asyncio.to_thread(probe, original)
     except Exception:
         duration, size = 0.0, original.stat().st_size
     await _touch(project_id, duration=duration, file_size=size)
@@ -241,7 +241,9 @@ async def process_project(project_id: int) -> None:
         else:
             await _touch(project_id, status="splitting", error_message=None)
             try:
-                files = splitter_service.split_audio(original, store.chunks_dir(rel))
+                files = await asyncio.to_thread(
+                    splitter_service.split_audio, original, store.chunks_dir(rel)
+                )
             except Exception as exc:
                 log.warning("split failed: %s", exc)
                 await _fail(project_id, "분할에 실패했습니다. 다시 시도해 주세요.")

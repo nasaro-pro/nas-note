@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 
@@ -13,7 +15,19 @@ from backend.database.db import init_db
 from backend.api.projects import router as projects_router
 from backend.api.search import router as search_router
 from backend.api.notes import router as notes_router
+from backend.services.audio_service import ffmpeg_ok
 from backend.workers.processing_worker import worker
+
+
+def _prep_env() -> None:
+    extra = ["127.0.0.1", "localhost", "::1"]
+    for key in ("NO_PROXY", "no_proxy"):
+        cur = os.environ.get(key, "")
+        parts = [p.strip() for p in cur.split(",") if p.strip()]
+        for item in extra:
+            if item not in parts:
+                parts.append(item)
+        os.environ[key] = ",".join(parts)
 
 
 def _setup_logging() -> None:
@@ -34,8 +48,10 @@ def _setup_logging() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _prep_env()
     _setup_logging()
     await init_db()
+    await asyncio.to_thread(ffmpeg_ok)
     await worker.start()
     yield
 
@@ -43,12 +59,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="nas-note", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:5173",
-        "http://localhost:5173",
-        "http://[::1]:5173",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

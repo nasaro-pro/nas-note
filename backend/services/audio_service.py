@@ -85,16 +85,6 @@ def _common_bins(name: str) -> list[Path]:
     which = shutil.which(name)
     if which:
         out.insert(0, Path(which))
-    winget = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
-    if winget.is_dir():
-        try:
-            for pkg in winget.glob("Gyan.FFmpeg*"):
-                hits = list(pkg.rglob(exe))
-                if hits:
-                    out.append(hits[0])
-                    break
-        except OSError:
-            pass
     return out
 
 
@@ -106,7 +96,7 @@ def _works(path: Path) -> bool:
             [str(path), "-version"],
             capture_output=True,
             creationflags=CREATE_NO_WINDOW,
-            timeout=8,
+            timeout=2,
         )
         return r.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
@@ -122,6 +112,19 @@ def _resolve(name: str) -> str | None:
         seen.add(key)
         if _works(cand):
             return str(cand)
+    exe = _exe_name(name)
+    winget = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
+    if winget.is_dir():
+        try:
+            for pkg in winget.glob("Gyan.FFmpeg*"):
+                for hit in pkg.glob(f"*/bin/{exe}"):
+                    if _works(hit):
+                        return str(hit)
+                for hit in pkg.glob(f"*/*/{exe}"):
+                    if _works(hit):
+                        return str(hit)
+        except OSError:
+            pass
     return None
 
 

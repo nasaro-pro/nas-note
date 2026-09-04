@@ -59,7 +59,7 @@ def _live_texts(rel_dir: str) -> tuple[str, str]:
 
 @router.get("/health")
 async def health() -> dict:
-    ffmpeg = ffmpeg_ok()
+    ffmpeg = await asyncio.to_thread(ffmpeg_ok)
     try:
         await db.fetchone("SELECT 1 AS ok")
         db_ok = True
@@ -98,7 +98,7 @@ async def create_project(
     file: UploadFile = File(...),
     title: str | None = Form(None),
 ) -> dict:
-    if not ffmpeg_ok():
+    if not await asyncio.to_thread(ffmpeg_ok):
         raise HTTPException(503, "FFmpeg가 설치되어 있지 않습니다")
     if not settings.groq_ready:
         raise HTTPException(503, "GROQ_API_KEY가 없습니다")
@@ -129,7 +129,7 @@ async def create_project(
     dest.write_bytes(data)
     duration = 0.0
     try:
-        duration, size = probe(dest)
+        duration, size = await asyncio.to_thread(probe, dest)
     except Exception:
         size = len(data)
     await db.execute(

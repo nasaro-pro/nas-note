@@ -663,20 +663,25 @@ try {
     $backendErr = Join-Path $logDir "backend.err.log"
     Remove-Item $backendOut, $backendErr -ErrorAction SilentlyContinue
 
+    $env:NO_PROXY = "127.0.0.1,localhost,::1"
+    $env:no_proxy = $env:NO_PROXY
+
     Write-Log "백엔드 시작"
     $backend = Start-Process -FilePath $venvPython -ArgumentList @(
         "-m", "uvicorn", "backend.main:app",
-        "--host", "127.0.0.1", "--port", "8000"
+        "--host", "127.0.0.1", "--port", "8000",
+        "--timeout-keep-alive", "75"
     ) -WorkingDirectory $Root -PassThru -WindowStyle Hidden `
         -RedirectStandardOutput $backendOut -RedirectStandardError $backendErr
 
     Write-Log "프론트 시작"
     $frontend = Start-Process -FilePath "cmd.exe" -ArgumentList @(
-        "/c", "set `"PATH=$nodeDir;%PATH%`" && `"$npm`" run dev"
+        "/c", "set `"PATH=$nodeDir;%PATH%`" && set `"NO_PROXY=127.0.0.1,localhost,::1`" && set `"no_proxy=127.0.0.1,localhost,::1`" && `"$npm`" run dev"
     ) -WorkingDirectory $feDir -PassThru -WindowStyle Minimized
 
     Write-Log "서버 응답 대기"
     $site = ""
+    $back = $false
     for ($i = 0; $i -lt 90; $i++) {
         $back = Test-Http "http://127.0.0.1:8000/api/health"
         if (Test-Http "http://localhost:5173/") { $site = "http://localhost:5173/" }
@@ -692,8 +697,8 @@ try {
     if (-not $site) {
         Fail "화면 서버가 켜지지 않았습니다. 다시 start.ps1 을 실행하세요."
     }
-    if (-not (Test-Http "http://127.0.0.1:8000/api/health")) {
-        Write-Log "백엔드는 아직 느릴 수 있습니다. 화면은 먼저 엽니다."
+    if (-not $back) {
+        Fail "백엔드가 켜지지 않았습니다. data\logs\backend.err.log 를 확인하세요."
     }
 
     Start-Process $site
