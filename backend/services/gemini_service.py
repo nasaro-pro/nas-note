@@ -32,18 +32,22 @@ SYSTEM = (
     "짧은 감상문이나 '이런 내용이다'로 끝내지 마라. 나중에 이 글만 보고 복습할 수 있게 적어라. "
     "원문에 없는 사실·배경지식·추측을 넣지 마라. 불확실하면 불확실하다고 밝혀라. "
     "말이 거의 없거나 음악·잡음이면 그 사실을 총정리에 적고 요약 정리는 짧게 둬라. "
-    "출력은 스키마만. 마크다운 울타리를 넣지 마라. "
+    "출력은 JSON 스키마만. 마크다운 울타리(```)를 넣지 마라. "
     "문자열 값에는 실제 줄바꿈을 넣어라. 백슬래시와 n 두 글자(\\n)를 넣지 마라.\n"
+    "가독성:\n"
+    "- 요약 정리는 ## 소제목으로 나누고, 소제목 앞뒤로 빈 줄을 넣어라.\n"
+    "- 한 문단은 2~4문장. 문단 사이에 빈 줄을 넣어라. 한 덩어리로 붙이지 마라.\n"
+    "- 배열 필드는 한 항목에 한 줄. 여러 항목을 한 문자열에 몰아넣지 마라.\n"
     "필드 역할:\n"
-    "- overall_summary(총정리): 무엇을 다루었는지 두괄식 6~12문장.\n"
+    "- overall_summary(총정리): 무엇을 다루었는지 두괄식 6~12문장. 문단을 나눠라.\n"
     "- extracted_info(정보 추가): 원문에 나온 이름, 날짜, 숫자, 장소, 고유명사, URL. "
     "'항목: 값' 한 줄. 뜻 설명은 넣지 마라. 없으면 빈 배열.\n"
     "- glossary(용어정리): 원문에 나온 전문용어, 약어, 개념. "
     "'용어: 원문에서 말한 뜻' 한 줄에 하나. 원문에 설명이 없으면 이름만. "
     "공부할 말이 있으면 비우지 마라. 여러 용어를 한 문자열에 몰아넣지 마라.\n"
     "- detailed_summary(요약 정리, 메인): 절대 짧게 쓰지 마라. "
-    "시간 순·주제 순으로 공부할 본문을 거의 다 담는 필기. 소제목(## 제목)과 빈 줄로 문단을 나눠라. "
-    "설명, 예시, 비교, 절차, 주의점, 말한 이가 강조한 부분을 빠짐없이 적어라. "
+    "시간 순·주제 순으로 공부할 본문을 거의 다 담는 필기. "
+    "설명, 예시, 비교, 절차, 주의점을 빠짐없이 적어라. "
     "한 시간 분량이면 수천 자 이상이 정상이다. "
     "구간 노트면 그 구간만 촘촘히 채우고 앞뒤를 짐작하지 마라.\n"
     "- key_points(핵심 내용): 원문에 배울 점이 있으면 비우지 마라. "
@@ -205,14 +209,111 @@ def _config_for(schema_cls: type, system: str, types: object):
         return types.GenerateContentConfig(**config_kwargs)
 
 
+def _config_plain(system: str, types: object):
+    return types.GenerateContentConfig(
+        temperature=0.2,
+        max_output_tokens=24576,
+        response_mime_type="application/json",
+        system_instruction=system,
+    )
+
+
+def _extract_json_object(raw: str) -> str:
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text).strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        return text[start : end + 1]
+    return text
+
+
+def _escape_newlines_in_strings(text: str) -> str:
+    out: list[str] = []
+    in_str = False
+    escape = False
+    for ch in text:
+        if in_str:
+            if escape:
+                out.append(ch)
+                escape = False
+            elif ch == "\\":
+                out.append(ch)
+                escape = True
+            elif ch == '"':
+                out.append(ch)
+                in_str = False
+            elif ch == "\n":
+                out.append("\\n")
+            elif ch == "\r":
+                continue
+            elif ch == "\t":
+                out.append("\\t")
+            else:
+                out.append(ch)
+        else:
+            if ch == '"':
+                in_str = True
+            out.append(ch)
+    return "".join(out)
+
+
+def _prepare_json(raw: str) -> str:
+    text = _extract_json_object(raw)
+    text = _escape_newlines_in_strings(text)
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    return text
+
+
 def _parse_json(raw: str, schema_cls: type):
-    raw = (raw or "").strip()
-    if raw.startswith("```"):
-        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw)
+    prepared = _prepare_json(raw)
     try:
-        return schema_cls.model_validate_json(raw)
+        return schema_cls.model_validate_json(prepared)
     except Exception:
-        return schema_cls.model_validate(json.loads(raw))
+        data = json.loads(prepared)
+        return schema_cls.model_validate(data)
+
+
+def _wrap_sentences(text: str) -> str:
+    parts = [p.strip() for p in re.split(r"(?<=[.!?。！？])\s+", text) if p.strip()]
+    if len(parts) < 4:
+        return text
+    paras: list[str] = []
+    buf: list[str] = []
+    size = 0
+    for piece in parts:
+        buf.append(piece)
+        size += len(piece)
+        if len(buf) >= 3 or size > 180:
+            paras.append(" ".join(buf))
+            buf = []
+            size = 0
+    if buf:
+        paras.append(" ".join(buf))
+    return "\n\n".join(paras)
+
+
+def polish_prose(text: str) -> str:
+    cur = unescape_text(text).replace("\r\n", "\n").replace("\r", "\n").replace("\u00a0", " ")
+    cur = re.sub(r"[ \t]+\n", "\n", cur)
+    cur = re.sub(r"\n[ \t]+", "\n", cur)
+    cur = re.sub(r"[ \t]*#{1,3}[ \t]+", "\n\n## ", cur)
+    cur = re.sub(r"\n##\s*\n", "\n\n", cur)
+    cur = re.sub(r"\n{3,}", "\n\n", cur).strip()
+    if cur.count("\n") < 3 and len(cur) > 360:
+        cur = _wrap_sentences(cur)
+    return cur.strip()
+
+
+def polish_result(result: AnalysisResult) -> AnalysisResult:
+    data = result.model_dump()
+    data["overall_summary"] = polish_prose(data.get("overall_summary") or "")
+    data["detailed_summary"] = polish_prose(data.get("detailed_summary") or "")
+    if "transcript" in data:
+        data["transcript"] = unescape_text(data.get("transcript") or "").strip()
+    return type(result).model_validate(data)
 
 
 def _media_part(client: object, types: object, path: Path):
@@ -256,10 +357,19 @@ def live_analysis_text(raw: str) -> str:
     if not raw:
         return "요약 정리를 작성하는 중입니다."
     try:
-        data = json.loads(raw)
-        return format_analysis_text(AnalysisResult.model_validate(data))
+        parsed = _parse_json(raw, AnalysisResult)
+        return format_analysis_text(polish_result(parsed))
     except Exception:
-        return "작성 중…\n\n" + unescape_text(raw)
+        pass
+    m = re.search(r'"detailed_summary"\s*:\s*"((?:[^"\\]|\\.)*)', raw)
+    if m:
+        piece = unescape_text(m.group(1)).strip()
+        if piece:
+            return polish_prose(piece)
+    cleaned = unescape_text(raw).strip()
+    if cleaned.startswith("{") or cleaned.startswith("```"):
+        return "요약 정리를 작성하는 중입니다."
+    return polish_prose(cleaned) if cleaned else "요약 정리를 작성하는 중입니다."
 
 
 def _generate_once(client: object, model: str, contents: object, config: object, draft_path: Path | None) -> str:
@@ -313,37 +423,50 @@ def _generate_json(
 
     global _resolved_model
     client = genai.Client(api_key=settings.gemini_api_key.strip())
-    config = _config_for(schema_cls, system, types)
+    schema_config = _config_for(schema_cls, system, types)
+    plain_config = _config_plain(system, types)
     last: Exception | None = None
     for model in _models_to_try():
-        try:
-            raw = _generate_once(client, model, contents, config, draft_path)
-        except FatalGeminiError:
-            raise
-        except Exception as exc:
-            msg = str(exc).lower()
-            if (
-                _model_unavailable(exc)
-                or _transient_gemini(exc)
-                or "not supported" in msg
-                or "inline" in msg
-                or "429" in msg
-                or "resource_exhausted" in msg
-                or "quota" in msg
-                or "ascii" in msg
-            ):
-                log.warning("gemini model skip %s: %s", model, type(exc).__name__)
-                last = exc
-                if _resolved_model == model:
-                    _resolved_model = None
+        parsed = None
+        for config in (schema_config, plain_config):
+            try:
+                raw = _generate_once(client, model, contents, config, draft_path)
+            except FatalGeminiError:
+                raise
+            except Exception as exc:
+                msg = str(exc).lower()
+                if (
+                    _model_unavailable(exc)
+                    or _transient_gemini(exc)
+                    or "not supported" in msg
+                    or "inline" in msg
+                    or "429" in msg
+                    or "resource_exhausted" in msg
+                    or "quota" in msg
+                    or "ascii" in msg
+                    or "invalid" in msg
+                    or "schema" in msg
+                ):
+                    log.warning("gemini model skip %s: %s", model, type(exc).__name__)
+                    last = exc
+                    if _resolved_model == model:
+                        _resolved_model = None
+                    continue
+                raise
+            if not raw:
+                last = RetryableGeminiError("빈 응답")
                 continue
-            raise
-        if not raw:
-            last = RetryableGeminiError("빈 응답")
+            try:
+                parsed = polish_result(_parse_json(raw, schema_cls))
+                break
+            except Exception as exc:
+                log.warning("gemini json parse fail %s: %s", model, type(exc).__name__)
+                last = exc
+                continue
+        if parsed is None:
             continue
         _resolved_model = model
         log.info("gemini model in use: %s", model)
-        parsed = _parse_json(raw, schema_cls)
         if draft_path and isinstance(parsed, AnalysisResult):
             _write_draft(draft_path, format_analysis_text(parsed))
         return parsed
@@ -387,7 +510,7 @@ async def _call(prompt: str, draft_path: Path | None = None) -> AnalysisResult:
 
 
 def _persist_analysis(rel_dir: str, result: AnalysisResult) -> None:
-    result = AnalysisResult.model_validate(result.model_dump())
+    result = polish_result(AnalysisResult.model_validate(result.model_dump()))
     root = store.project_root(rel_dir)
     body = format_analysis_text(result)
     store.write_json(root / "analysis.json", result.model_dump())
@@ -410,7 +533,8 @@ async def analyze(title: str, transcript: str, rel_dir: str) -> AnalysisResult:
         prompt = (
             f"프로젝트 제목: {title}\n\n"
             "아래는 Groq Whisper 전사본이다. "
-            "요약 정리에 공부할 본문을 길고 촘촘히 채워라. 한두 문단으로 끝내지 마라.\n\n"
+            "소제목(## 제목) 앞뒤로 빈 줄을 넣고, 문단도 빈 줄로 나눠라. "
+            "한두 문단으로 끝내지 마라.\n\n"
             f"-----\n{pieces[0]}\n-----"
         )
         result = await _call(prompt, draft)

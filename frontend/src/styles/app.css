@@ -355,30 +355,37 @@ button:focus-visible, input:focus-visible, a:focus-visible, textarea:focus-visib
 .transcript { font-size: 16px; line-height: 28px; white-space: pre-wrap; margin: 0; }
 .study-notes { font-size: 16px; line-height: 28px; margin: 0; }
 .note-body {
-  font-size: 16px;
-  line-height: 1.75;
+  font-size: 16.5px;
+  line-height: 1.8;
+  letter-spacing: -0.01em;
+  word-break: keep-all;
+  overflow-wrap: break-word;
   color: var(--ink);
 }
-.note-body p { margin: 0 0 14px; }
+.note-body p { margin: 0 0 16px; }
 .note-body p:last-child { margin-bottom: 0; }
 .note-body h3 {
-  font-size: 17px;
-  line-height: 1.4;
-  margin: 22px 0 8px;
+  font-size: 1.05rem;
+  line-height: 1.45;
+  margin: 26px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
   color: var(--ink);
   font-weight: 700;
 }
+.note-block { margin-bottom: 4px; }
 .note-block:first-child h3,
 .note-body > h3:first-child { margin-top: 0; }
 .note-body ul {
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   padding: 0;
   list-style: none;
 }
 .note-body li {
   padding-left: 16px;
   position: relative;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  line-height: 1.7;
 }
 .note-body li::before {
   content: "";

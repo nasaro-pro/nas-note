@@ -17,8 +17,8 @@ function renderInline(line: string): ReactNode {
 
 function headingText(line: string): string | null {
   const trimmed = line.trim();
-  const hash = trimmed.match(/^#{1,3}\s+(.+)$/);
-  if (hash) return hash[1].trim();
+  const hash = trimmed.match(/^#{1,3}\s*(.+)$/);
+  if (hash && hash[1].trim() && !/^#+$/.test(hash[1].trim())) return hash[1].trim();
   const boxed = trimmed.match(/^【(.+)】$/);
   if (boxed) return boxed[1].trim();
   const bold = trimmed.match(/^\*\*([^*]+)\*\*$/);
@@ -36,7 +36,7 @@ function listText(line: string): string {
 }
 
 export function NoteBody({ text, className }: { text: string; className?: string }) {
-  const raw = unescapeGemini(text).replace(/\r\n/g, "\n").trim();
+  const raw = normalizeNote(text);
   if (!raw) return <p className="muted">{EMPTY}</p>;
 
   const blocks = raw.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
@@ -50,28 +50,11 @@ export function NoteBody({ text, className }: { text: string; className?: string
           return (
             <div key={i} className="note-block">
               <h3>{title}</h3>
-              {rest.length ? (
-                rest.every(isListLine) ? (
-                  <ul>
-                    {rest.map((line, j) => (
-                      <li key={j}>{renderInline(listText(line))}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p>
-                    {rest.map((line, j) => (
-                      <span key={j}>
-                        {renderInline(line)}
-                        {j < rest.length - 1 ? <br /> : null}
-                      </span>
-                    ))}
-                  </p>
-                )
-              ) : null}
+              {rest.length ? renderRest(rest) : null}
             </div>
           );
         }
-        const filled = lines.filter((line) => line.trim());
+        const filled = lines.map((line) => line.trim()).filter(Boolean);
         if (filled.length && filled.every(isListLine)) {
           return (
             <ul key={i}>
@@ -81,19 +64,45 @@ export function NoteBody({ text, className }: { text: string; className?: string
             </ul>
           );
         }
+        if (filled.length > 1) {
+          return (
+            <div key={i} className="note-block">
+              {filled.map((line, j) => (
+                <p key={j}>{renderInline(line)}</p>
+              ))}
+            </div>
+          );
+        }
         return (
           <p key={i}>
-            {lines.map((line, j) => (
-              <span key={j}>
-                {renderInline(line.trim() ? line : "\u00a0")}
-                {j < lines.length - 1 ? <br /> : null}
-              </span>
-            ))}
+            {renderInline((filled[0] || "").trim())}
           </p>
         );
       })}
     </div>
   );
+}
+
+function normalizeNote(text: string): string {
+  let cur = unescapeGemini(text).replace(/\r\n/g, "\n").replace(/\u00a0/g, " ");
+  cur = cur.replace(/[ \t]+$/gm, "");
+  cur = cur.replace(/[ \t]*#{1,3}[ \t]*/g, "\n\n## ");
+  cur = cur.replace(/\n##\s*\n/g, "\n\n");
+  cur = cur.replace(/\n{3,}/g, "\n\n");
+  return cur.trim();
+}
+
+function renderRest(rest: string[]) {
+  if (rest.every(isListLine)) {
+    return (
+      <ul>
+        {rest.map((line, j) => (
+          <li key={j}>{renderInline(listText(line))}</li>
+        ))}
+      </ul>
+    );
+  }
+  return rest.map((line, j) => <p key={j}>{renderInline(line)}</p>);
 }
 
 function Block({ label, children }: { label: string; children: ReactNode }) {

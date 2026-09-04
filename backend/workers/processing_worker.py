@@ -291,7 +291,7 @@ async def process_project(project_id: int) -> None:
             result = await gemini_service.analyze(row["title"], full, rel)
         except Exception as exc:
             log.warning("gemini failed: %s", exc)
-            await _fail(project_id, "분석에 실패했습니다. 텍스트는 저장되어 있습니다.")
+            await _fail(project_id, "Gemini 요약을 만들지 못했습니다. 변환 텍스트는 저장되어 있으니 이어서 재시도하세요.")
             return
         await _save_analysis(project_id, result)
         store.delete_dir(store.work_dir(rel))
