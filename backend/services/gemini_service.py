@@ -103,6 +103,7 @@ AUDIO_SYSTEM = (
     "그 내용만으로 정리하라. 들리지 않은 사실을 만들지 마라. "
     "말이 거의 없고 음악·효과음만 있으면 transcript에 확인된 가사나 짧은 멘트만 적고 "
     "분석은 실제로 들린 것만 채워라. 불확실하면 배열을 비워라. "
+    "같은 구절을 반복하지 마라. 짧은 입력이면 짧게 끝내라. "
     "출력은 스키마를 지켜라. 마크다운 울타리를 넣지 마라. "
     "문자열에는 실제 줄바꿈을 넣고, 백슬래시와 n 두 글자(\\n)를 넣지 마라. "
     "핵심 내용, 결정 사항, 용어정리는 들린 내용이 있으면 배열로 채워라."
@@ -194,10 +195,10 @@ def _transient_gemini(exc: Exception) -> bool:
     )
 
 
-def _config_for(schema_cls: type, system: str, types: object):
+def _config_for(schema_cls: type, system: str, types: object, max_output_tokens: int = 24576):
     config_kwargs: dict = {
         "temperature": 0.2,
-        "max_output_tokens": 24576,
+        "max_output_tokens": max_output_tokens,
         "response_mime_type": "application/json",
         "system_instruction": system,
     }
@@ -210,13 +211,63 @@ def _config_for(schema_cls: type, system: str, types: object):
         return types.GenerateContentConfig(**config_kwargs)
 
 
-def _config_plain(system: str, types: object):
+def _config_plain(system: str, types: object, max_output_tokens: int = 24576):
     return types.GenerateContentConfig(
         temperature=0.2,
-        max_output_tokens=24576,
+        max_output_tokens=max_output_tokens,
         response_mime_type="application/json",
         system_instruction=system,
     )
+
+
+def _token_budget(contents: object) -> int:
+    if isinstance(contents, str):
+        n = len(contents)
+        if n < 200:
+            return 2048
+        if n < 800:
+            return 4096
+        if n < 4000:
+            return 8192
+        return 24576
+    return 24576
+
+
+def _cut_repeating_tail(text: str) -> tuple[str, bool]:
+    n = len(text)
+    if n < 40:
+        return text, False
+    window = text[-1200:] if n > 1200 else text
+    max_unit = min(80, len(window) // 4)
+    for size in range(max_unit, 3, -1):
+        unit = window[-size:]
+        if not unit.strip() or not re.search(r"[\w가-힣]", unit):
+            continue
+        reps = 1
+        pos = len(window) - size
+        while pos >= size and window[pos - size : pos] == unit:
+            reps += 1
+            pos -= size
+        need = 4 if size >= 8 else 6
+        if reps >= need:
+            extra = size * (reps - 1)
+            return text[: n - extra], True
+    return text, False
+
+
+def collapse_loops(text: str) -> tuple[str, bool]:
+    if not text or len(text) < 32:
+        return text, False
+    looping = False
+    cur = text
+    nxt = re.sub(r"(?m)^(.+)$(?:\n\1){3,}", r"\1", cur)
+    if nxt != cur:
+        looping = True
+        cur = nxt
+    cur, tail_loop = _cut_repeating_tail(cur)
+    if tail_loop:
+        looping = True
+    return cur, looping
 
 
 def _extract_json_object(raw: str) -> str:
@@ -305,6 +356,7 @@ def polish_prose(text: str) -> str:
     cur = re.sub(r"\n{3,}", "\n\n", cur).strip()
     if cur.count("\n") < 3 and len(cur) > 360:
         cur = _wrap_sentences(cur)
+    cur, _ = collapse_loops(cur)
     return cur.strip()
 
 
@@ -314,6 +366,17 @@ def polish_result(result: AnalysisResult) -> AnalysisResult:
     data["detailed_summary"] = polish_prose(data.get("detailed_summary") or "")
     if "transcript" in data:
         data["transcript"] = unescape_text(data.get("transcript") or "").strip()
+    for key in ("extracted_info", "glossary", "key_points", "decisions", "todos", "important"):
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in data.get(key) or []:
+            text, _ = collapse_loops(str(item))
+            text = text.strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            cleaned.append(text)
+        data[key] = cleaned
     return type(result).model_validate(data)
 
 
@@ -434,6 +497,7 @@ def _live_prose(text: str) -> str:
 
 def live_analysis_text(raw: str) -> str:
     raw = (raw or "").strip()
+    raw, _looping = collapse_loops(raw)
     if not raw:
         return "요약 정리를 작성하는 중입니다."
     try:
@@ -497,12 +561,18 @@ def _generate_once(client: object, model: str, contents: object, config: object,
             if not piece:
                 continue
             acc = _accumulate_stream(acc, piece)
+            acc, looping = collapse_loops(acc)
             _write_draft(draft_path, live_analysis_text(acc))
+            if looping:
+                log.warning("gemini stream repeat stopped %s chars=%s", model, len(acc))
+                break
         if acc.strip():
+            acc, _ = collapse_loops(acc)
             return acc.strip()
     except Exception as exc:
         log.info("gemini stream fallback %s: %s", model, type(exc).__name__)
         if acc.strip():
+            acc, _ = collapse_loops(acc)
             _write_draft(draft_path, live_analysis_text(acc))
             return acc.strip()
     response = client.models.generate_content(
@@ -512,6 +582,7 @@ def _generate_once(client: object, model: str, contents: object, config: object,
     )
     raw = (getattr(response, "text", None) or "").strip()
     if raw:
+        raw, _ = collapse_loops(raw)
         _write_draft(draft_path, live_analysis_text(raw))
         return raw
     reason = ""
@@ -534,8 +605,9 @@ def _generate_json(
 
     global _resolved_model
     client = _client()
-    schema_config = _config_for(schema_cls, system, types)
-    plain_config = _config_plain(system, types)
+    budget = _token_budget(contents)
+    schema_config = _config_for(schema_cls, system, types, budget)
+    plain_config = _config_plain(system, types, budget)
     last: Exception | None = None
     for model in _models_to_try():
         parsed = None
@@ -640,11 +712,18 @@ async def analyze(title: str, transcript: str, rel_dir: str) -> AnalysisResult:
     pieces = _split_text(transcript)
 
     if len(pieces) == 1:
+        short = len(pieces[0].strip()) < 120
+        extra = (
+            "원문이 매우 짧다. 총정리와 요약 정리를 짧게 끝내라. "
+            "같은 구절을 반복하지 말고, 없는 내용을 늘리지 마라.\n\n"
+            if short
+            else "소제목(## 제목) 앞뒤로 빈 줄을 넣고, 문단도 빈 줄로 나눠라. "
+            "원문에 있는 설명은 빼먹지 마라.\n\n"
+        )
         prompt = (
             f"프로젝트 제목: {title}\n\n"
             "아래는 Groq Whisper 전사본이다. "
-            "소제목(## 제목) 앞뒤로 빈 줄을 넣고, 문단도 빈 줄로 나눠라. "
-            "한두 문단으로 끝내지 마라.\n\n"
+            f"{extra}"
             f"-----\n{pieces[0]}\n-----"
         )
         result = await _call(prompt, draft)
@@ -668,7 +747,7 @@ async def analyze(title: str, transcript: str, rel_dir: str) -> AnalysisResult:
         reduce_prompt = (
             "아래는 시간 순 부분 정리 JSON 배열이다. 원문이 아닌 이 JSON만 근거로 삼아라. "
             "총정리는 전체를 관통하는 글로 다시 쓰고, 배열 필드는 중복만 빼서 합쳐라. "
-            "요약 정리(detailed_summary)는 절대 짧게 압축하지 마라. "
+            "요약 정리(detailed_summary)는 구간 내용을 이어서 쓰되 같은 문장을 반복하지 마라. "
             "각 구간의 요약 정리를 시간 순으로 이어서 하나의 긴 공부 정리로 만들고, "
             "소제목과 문단을 유지하라. 내용을 한 페이지로 줄이지 마라. "
             "핵심 내용·결정 사항·용어정리 배열은 비우지 말고 합쳐라. "
