@@ -32,6 +32,8 @@ SYSTEM = (
     "짧은 감상문이나 '이런 내용이다'로 끝내지 마라. 나중에 이 글만 보고 복습할 수 있게 적어라. "
     "원문에 없는 사실·배경지식·추측을 넣지 마라. 불확실하면 불확실하다고 밝혀라. "
     "말이 거의 없거나 음악·잡음이면 그 사실을 총정리에 적고 요약 정리는 짧게 둬라. "
+    "원문이 한두 문장이면 출력도 짧게 끝내라. 분량을 채우려고 같은 말을 돌리지 마라. "
+    "같은 단어·구절·문장을 두 번 이상 반복하지 마라. "
     "출력은 JSON 스키마만. 마크다운 울타리(```)를 넣지 마라. "
     "문자열 값에는 실제 줄바꿈을 넣어라. 백슬래시와 n 두 글자(\\n)를 넣지 마라.\n"
     "가독성:\n"
@@ -39,17 +41,16 @@ SYSTEM = (
     "- 한 문단은 2~4문장. 문단 사이에 빈 줄을 넣어라. 한 덩어리로 붙이지 마라.\n"
     "- 배열 필드는 한 항목에 한 줄. 여러 항목을 한 문자열에 몰아넣지 마라.\n"
     "필드 역할:\n"
-    "- overall_summary(총정리): 무엇을 다루었는지 두괄식 6~12문장. 문단을 나눠라.\n"
+    "- overall_summary(총정리): 원문 길이에 맞게. 긴 강의면 6~12문장, 짧은 말이면 2~4문장. 문단을 나눠라.\n"
     "- extracted_info(정보 추가): 원문에 나온 이름, 날짜, 숫자, 장소, 고유명사, URL. "
     "'항목: 값' 한 줄. 뜻 설명은 넣지 마라. 없으면 빈 배열.\n"
     "- glossary(용어정리): 원문에 나온 전문용어, 약어, 개념. "
     "'용어: 원문에서 말한 뜻' 한 줄에 하나. 원문에 설명이 없으면 이름만. "
     "공부할 말이 있으면 비우지 마라. 여러 용어를 한 문자열에 몰아넣지 마라.\n"
-    "- detailed_summary(요약 정리, 메인): 절대 짧게 쓰지 마라. "
-    "시간 순·주제 순으로 공부할 본문을 거의 다 담는 필기. "
-    "설명, 예시, 비교, 절차, 주의점을 빠짐없이 적어라. "
-    "한 시간 분량이면 수천 자 이상이 정상이다. "
-    "구간 노트면 그 구간만 촘촘히 채우고 앞뒤를 짐작하지 마라.\n"
+    "- detailed_summary(요약 정리, 메인): 원문에 나온 설명을 빠짐없이 적되, "
+    "원문이 짧으면 짧게 끝내라. 같은 문장을 늘려 쓰지 마라. "
+    "긴 강의면 시간 순·주제 순으로 공부할 본문을 담아라. "
+    "구간 노트면 그 구간만 채우고 앞뒤를 짐작하지 마라.\n"
     "- key_points(핵심 내용): 원문에 배울 점이 있으면 비우지 마라. "
     "정의, 원리, 비교, 강조점을 한 줄에 하나씩. 여러 문장을 한 문자열에 몰아넣지 마라.\n"
     "- decisions(결정 사항): 확정된 선택, 결론, 합의, 진행 방향. "
@@ -331,25 +332,104 @@ def _media_part(client: object, types: object, path: Path):
         shutil.rmtree(td, ignore_errors=True)
 
 
+def _client():
+    from google import genai
+
+    key = settings.gemini_api_key.strip()
+    try:
+        return genai.Client(api_key=key, http_options={"timeout": 300_000})
+    except Exception:
+        return genai.Client(api_key=key)
+
+
 def _event_text(ev: object) -> str:
+    bits: list[str] = []
+    try:
+        candidates = getattr(ev, "candidates", None) or []
+        for cand in candidates:
+            content = getattr(cand, "content", None)
+            parts = getattr(content, "parts", None) or []
+            for part in parts:
+                if getattr(part, "thought", False):
+                    continue
+                piece = getattr(part, "text", None)
+                if piece:
+                    bits.append(str(piece))
+    except Exception:
+        bits = []
+    if bits:
+        return "".join(bits)
     try:
         text = getattr(ev, "text", None)
         if text:
             return str(text)
     except Exception:
         pass
-    try:
-        parts = ev.candidates[0].content.parts  # type: ignore[attr-defined]
-        return "".join(str(getattr(p, "text", "") or "") for p in parts)
-    except Exception:
-        return ""
+    return ""
+
+
+def _accumulate_stream(acc: str, piece: str) -> str:
+    if not piece:
+        return acc
+    if not acc or piece.startswith(acc):
+        return piece
+    if acc.startswith(piece) or acc.endswith(piece):
+        return acc
+    limit = min(len(acc), len(piece), 400)
+    for n in range(limit, 0, -1):
+        if acc[-n:] == piece[:n]:
+            return acc + piece[n:]
+    return acc + piece
 
 
 def _write_draft(path: Path | None, text: str) -> None:
-    if not path:
+    if path is None or not str(text).strip():
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    store.write_text(path, text)
+
+
+def _partial_json_string(raw: str, key: str) -> str:
+    match = re.search(rf'"{re.escape(key)}"\s*:\s*"', raw)
+    if not match:
+        return ""
+    i = match.end()
+    out: list[str] = []
+    while i < len(raw):
+        ch = raw[i]
+        if ch == "\\" and i + 1 < len(raw):
+            nxt = raw[i + 1]
+            out.append({"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\"}.get(nxt, nxt))
+            i += 2
+            continue
+        if ch == '"':
+            break
+        out.append(ch)
+        i += 1
+    return unescape_text("".join(out)).strip()
+
+
+def _partial_json_list(raw: str, key: str) -> list[str]:
+    match = re.search(rf'"{re.escape(key)}"\s*:\s*\[', raw)
+    if not match:
+        return []
+    chunk = raw[match.end() :]
+    end = chunk.find("]")
+    body = chunk if end < 0 else chunk[:end]
+    items: list[str] = []
+    for piece in re.findall(r'"((?:[^"\\]|\\.)*)"', body):
+        text = unescape_text(piece).strip()
+        if text:
+            items.append(text)
+    return items
+
+
+def _live_prose(text: str) -> str:
+    cur = unescape_text(text).replace("\r\n", "\n").replace("\r", "\n").replace("\u00a0", " ")
+    cur = re.sub(r"[ \t]+\n", "\n", cur)
+    cur = re.sub(r"[ \t]*#{1,3}[ \t]+", "\n\n## ", cur)
+    cur = re.sub(r"\n##\s*\n", "\n\n", cur)
+    cur = re.sub(r"\n{3,}", "\n\n", cur).strip()
+    return cur
 
 
 def live_analysis_text(raw: str) -> str:
@@ -358,22 +438,54 @@ def live_analysis_text(raw: str) -> str:
         return "요약 정리를 작성하는 중입니다."
     try:
         parsed = _parse_json(raw, AnalysisResult)
-        return format_analysis_text(polish_result(parsed))
+        return format_analysis_text(polish_result(parsed), skip_empty=True)
     except Exception:
         pass
-    m = re.search(r'"detailed_summary"\s*:\s*"((?:[^"\\]|\\.)*)', raw)
-    if m:
-        piece = unescape_text(m.group(1)).strip()
-        if piece:
-            return polish_prose(piece)
+    overall = _live_prose(_partial_json_string(raw, "overall_summary"))
+    detailed = _live_prose(_partial_json_string(raw, "detailed_summary"))
+    result = AnalysisResult(
+        overall_summary=overall,
+        detailed_summary=detailed,
+        extracted_info=_partial_json_list(raw, "extracted_info"),
+        glossary=_partial_json_list(raw, "glossary"),
+        key_points=_partial_json_list(raw, "key_points"),
+        decisions=_partial_json_list(raw, "decisions"),
+        todos=_partial_json_list(raw, "todos"),
+        important=_partial_json_list(raw, "important"),
+    )
+    formatted = format_analysis_text(result, skip_empty=True)
+    if formatted and formatted != "요약 정리를 작성하는 중입니다.":
+        return formatted
+    strings = [unescape_text(item).strip() for item in re.findall(r'"((?:[^"\\]|\\.){20,})"', raw)]
+    skip = {
+        "overall_summary",
+        "detailed_summary",
+        "extracted_info",
+        "glossary",
+        "key_points",
+        "decisions",
+        "todos",
+        "important",
+    }
+    strings = [_live_prose(item) for item in strings if item and item not in skip]
+    if strings:
+        return max(strings, key=len)
     cleaned = unescape_text(raw).strip()
     if cleaned.startswith("{") or cleaned.startswith("```"):
-        return "요약 정리를 작성하는 중입니다."
-    return polish_prose(cleaned) if cleaned else "요약 정리를 작성하는 중입니다."
+        visible = re.sub(r"```(?:json)?", " ", cleaned)
+        visible = re.sub(r'[{}\[\]"]+', " ", visible)
+        visible = re.sub(
+            r"\b(overall_summary|detailed_summary|extracted_info|glossary|key_points|decisions|todos|important)\b",
+            " ",
+            visible,
+        )
+        visible = re.sub(r"\s+", " ", visible).strip()
+        return visible[:2000] if len(visible) > 24 else "요약 정리를 작성하는 중입니다."
+    return _live_prose(cleaned) if cleaned else "요약 정리를 작성하는 중입니다."
 
 
 def _generate_once(client: object, model: str, contents: object, config: object, draft_path: Path | None) -> str:
-    bits: list[str] = []
+    acc = ""
     try:
         stream = client.models.generate_content_stream(
             model=model,
@@ -384,15 +496,15 @@ def _generate_once(client: object, model: str, contents: object, config: object,
             piece = _event_text(ev)
             if not piece:
                 continue
-            bits.append(piece)
-            _write_draft(draft_path, live_analysis_text("".join(bits)))
-        raw = "".join(bits).strip()
-        if raw:
-            return raw
+            acc = _accumulate_stream(acc, piece)
+            _write_draft(draft_path, live_analysis_text(acc))
+        if acc.strip():
+            return acc.strip()
     except Exception as exc:
-        if bits:
-            raise
         log.info("gemini stream fallback %s: %s", model, type(exc).__name__)
+        if acc.strip():
+            _write_draft(draft_path, live_analysis_text(acc))
+            return acc.strip()
     response = client.models.generate_content(
         model=model,
         contents=contents,
@@ -418,17 +530,16 @@ def _generate_json(
     system: str,
     draft_path: Path | None = None,
 ):
-    from google import genai
     from google.genai import types
 
     global _resolved_model
-    client = genai.Client(api_key=settings.gemini_api_key.strip())
+    client = _client()
     schema_config = _config_for(schema_cls, system, types)
     plain_config = _config_plain(system, types)
     last: Exception | None = None
     for model in _models_to_try():
         parsed = None
-        for config in (schema_config, plain_config):
+        for config in (plain_config, schema_config):
             try:
                 raw = _generate_once(client, model, contents, config, draft_path)
             except FatalGeminiError:
@@ -479,17 +590,16 @@ def _call_sync(prompt: str, draft_path: Path | None = None) -> AnalysisResult:
     return _generate_json(prompt, AnalysisResult, SYSTEM, draft_path)
 
 
-def _analyze_media_sync(title: str, path: Path) -> MediaAnalysisResult:
-    from google import genai
+def _analyze_media_sync(title: str, path: Path, draft_path: Path | None = None) -> MediaAnalysisResult:
     from google.genai import types
 
-    client = genai.Client(api_key=settings.gemini_api_key.strip())
+    client = _client()
     part = _media_part(client, types, path)
     prompt = (
         f"프로젝트 제목: {title}\n"
         "이 파일을 듣고 transcript와 분석 필드를 채워라."
     )
-    return _generate_json([part, prompt], MediaAnalysisResult, AUDIO_SYSTEM)
+    return _generate_json([part, prompt], MediaAnalysisResult, AUDIO_SYSTEM, draft_path)
 
 
 async def _call(prompt: str, draft_path: Path | None = None) -> AnalysisResult:
@@ -571,43 +681,40 @@ async def analyze(title: str, transcript: str, rel_dir: str) -> AnalysisResult:
     return result
 
 
-def format_analysis_text(result: AnalysisResult) -> str:
+def format_analysis_text(result: AnalysisResult, *, skip_empty: bool = False) -> str:
     def bullets(items: list[str]) -> str:
         return "\n".join(f"- {x}" for x in items) if items else "없음"
 
-    blocks = [
-        "【총정리】",
-        (result.overall_summary or "").strip() or "없음",
-        "",
-        "【정보 추가】",
-        bullets(result.extracted_info),
-        "",
-        "【용어정리】",
-        bullets(result.glossary),
-        "",
-        "【요약 정리】",
-        (result.detailed_summary or "").strip() or "없음",
-        "",
-        "【핵심 내용】",
-        bullets(result.key_points),
-        "",
-        "【결정 사항】",
-        bullets(result.decisions),
-        "",
-        "【할 일】",
-        bullets(result.todos),
-        "",
-        "【중요 내용】",
-        bullets(result.important),
+    sections = [
+        ("【총정리】", (result.overall_summary or "").strip()),
+        ("【정보 추가】", bullets(result.extracted_info) if result.extracted_info else ""),
+        ("【용어정리】", bullets(result.glossary) if result.glossary else ""),
+        ("【요약 정리】", (result.detailed_summary or "").strip()),
+        ("【핵심 내용】", bullets(result.key_points) if result.key_points else ""),
+        ("【결정 사항】", bullets(result.decisions) if result.decisions else ""),
+        ("【할 일】", bullets(result.todos) if result.todos else ""),
+        ("【중요 내용】", bullets(result.important) if result.important else ""),
     ]
-    return "\n".join(blocks).strip()
+    blocks: list[str] = []
+    for title, body in sections:
+        text = body.strip()
+        if skip_empty and not text:
+            continue
+        if not text:
+            text = "없음"
+        if blocks:
+            blocks.append("")
+        blocks.extend([title, text])
+    return "\n".join(blocks).strip() or "요약 정리를 작성하는 중입니다."
 
 
 async def analyze_media(title: str, path: Path, rel_dir: str) -> MediaAnalysisResult:
     last: Exception | None = None
+    draft = store.project_root(rel_dir) / "analysis_draft.txt"
+    store.write_text(draft, "요약 정리를 작성하는 중입니다.")
     for attempt in (1, 2, 3):
         try:
-            result = await asyncio.to_thread(_analyze_media_sync, title, path)
+            result = await asyncio.to_thread(_analyze_media_sync, title, path, draft)
             break
         except FatalGeminiError:
             raise

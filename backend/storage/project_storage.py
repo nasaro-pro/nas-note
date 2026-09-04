@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -71,11 +73,29 @@ def today_date() -> str:
 
 def write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    last: OSError | None = None
+    for _ in range(5):
+        try:
+            os.replace(tmp, path)
+            return
+        except OSError as exc:
+            last = exc
+            time.sleep(0.04)
+    if last:
+        raise last
 
 
 def read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8") if path.exists() else ""
+    for _ in range(4):
+        try:
+            if not path.exists():
+                return ""
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            time.sleep(0.03)
+    return ""
 
 
 def write_json(path: Path, data: object) -> None:

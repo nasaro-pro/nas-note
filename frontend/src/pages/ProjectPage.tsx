@@ -48,15 +48,15 @@ export function ProjectPage() {
                 percent: st.percent,
                 error_message: st.error_message,
                 chunks: st.chunks,
-                transcript: st.transcript ?? prev.transcript,
-                analysis_text: st.analysis_text ?? prev.analysis_text,
+                transcript: st.transcript != null ? st.transcript : prev.transcript,
+                analysis_text: st.analysis_text != null ? st.analysis_text : prev.analysis_text,
               }
             : prev
         );
       } catch {
         /* ignore poll errors */
       }
-    }, 1000);
+    }, project.status === "analyzing" || project.status === "transcribing" ? 400 : 1000);
     return () => clearInterval(t);
   }, [project?.status, projectId]);
 
