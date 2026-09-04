@@ -7,6 +7,7 @@ from pathlib import Path
 
 from backend.config import settings
 from backend.services import audio_service as audio
+from backend.services.audio_service import FFmpegError
 
 MAX = settings.max_chunk_bytes
 MAX_SEC = settings.max_chunk_seconds
@@ -83,6 +84,25 @@ def _ensure_under_limit(chunk: Path, dest_dir: Path, depth: int, seq: list[int])
         result.extend(_ensure_under_limit(moved, dest_dir, depth + 1, seq))
     shutil.rmtree(tmp, ignore_errors=True)
     return result
+
+
+_DIRECT_STT = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".webm", ".weba", ".mpga", ".aac"}
+
+
+def prepare_for_stt(original: Path, chunks_dir: Path) -> list[Path]:
+    try:
+        return split_audio(original, chunks_dir)
+    except Exception as exc:
+        if original.stat().st_size <= MAX and original.suffix.lower() in _DIRECT_STT:
+            if chunks_dir.exists():
+                shutil.rmtree(chunks_dir, ignore_errors=True)
+            chunks_dir.mkdir(parents=True, exist_ok=True)
+            dest = chunks_dir / f"part_0001{original.suffix.lower()}"
+            _copy_in(original, dest)
+            return [dest]
+        if isinstance(exc, (SplitError, FFmpegError)):
+            raise
+        raise SplitError(str(exc) or "파일을 분석용 소리로 바꾸지 못했습니다.") from exc
 
 
 def split_audio(original: Path, chunks_dir: Path) -> list[Path]:

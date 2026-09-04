@@ -10,8 +10,72 @@ from pathlib import Path
 
 from backend.config import settings
 
-ALLOWED_EXT = {".mp3", ".wav", ".m4a", ".mp4", ".webm", ".ogg", ".weba"}
-AUDIO_EXT = ALLOWED_EXT | {".flac"}
+ALLOWED_EXT = {
+    ".mp3",
+    ".wav",
+    ".m4a",
+    ".mp4",
+    ".webm",
+    ".ogg",
+    ".weba",
+    ".flac",
+    ".mov",
+    ".mkv",
+    ".aac",
+    ".mpeg",
+    ".mpg",
+    ".mpga",
+    ".3gp",
+}
+AUDIO_EXT = ALLOWED_EXT
+MIME_EXT = {
+    "audio/mpeg": ".mp3",
+    "audio/mp3": ".mp3",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/wave": ".wav",
+    "audio/mp4": ".m4a",
+    "audio/x-m4a": ".m4a",
+    "audio/aac": ".aac",
+    "audio/flac": ".flac",
+    "audio/ogg": ".ogg",
+    "audio/webm": ".webm",
+    "audio/webm;codecs=opus": ".webm",
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+    "video/quicktime": ".mov",
+    "video/x-matroska": ".mkv",
+    "video/3gpp": ".3gp",
+    "video/mpeg": ".mpeg",
+}
+
+
+def guess_ext(filename: str, content_type: str | None, head: bytes) -> str:
+    ext = Path(filename or "").suffix.lower()
+    if ext in ALLOWED_EXT:
+        return ext
+    ct = (content_type or "").split(";")[0].strip().lower()
+    mapped = MIME_EXT.get(ct)
+    if mapped:
+        return mapped
+    if head.startswith(b"ID3") or (len(head) > 2 and head[0] == 0xFF and head[1] & 0xE0 == 0xE0):
+        return ".mp3"
+    if head.startswith(b"RIFF") and b"WAVE" in head[:16]:
+        return ".wav"
+    if head.startswith(b"OggS"):
+        return ".ogg"
+    if head.startswith(b"fLaC"):
+        return ".flac"
+    if head.startswith(b"\x1aE\xdf\xa3"):
+        return ".webm"
+    if len(head) >= 12 and head[4:8] == b"ftyp":
+        brand = head[8:12]
+        if brand in {b"qt  ", b"M4V ", b"mqt "}:
+            return ".mov"
+        if brand.startswith(b"M4A"):
+            return ".m4a"
+        return ".mp4"
+    return ext
 
 
 def slugify(title: str) -> str:

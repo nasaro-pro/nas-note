@@ -171,17 +171,14 @@ def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
 def _human_ffmpeg(stderr: str) -> str:
     text = (stderr or "").strip()
     low = text.lower()
-    if any(
-        s in low
-        for s in (
-            "no such file",
-            "cannot find",
-            "error opening",
-            "invalid argument",
-            "permission denied",
-        )
-    ):
+    if "permission denied" in low:
+        return "원본 파일을 읽을 권한이 없습니다."
+    if any(s in low for s in ("no such file", "cannot find the file", "error opening input")):
         return "원본 파일 위치를 찾지 못했습니다."
+    if any(s in low for s in ("does not contain any stream", "no audio", "output file does not contain any stream")):
+        return "파일에서 소리를 꺼내지 못했습니다. 영상에 오디오 트랙이 있는지 확인하세요."
+    if "invalid data" in low or "could not find codec" in low:
+        return "이 파일 형식은 분석할 수 없습니다."
     return text[:400]
 
 

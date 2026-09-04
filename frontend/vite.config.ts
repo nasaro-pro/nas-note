@@ -22,7 +22,7 @@ export default defineConfig({
         secure: false,
         ws: true,
         timeout: 0,
-        proxyTimeout: 10 * 60 * 1000,
+        proxyTimeout: 0,
         configure(proxy) {
           proxy.on("error", (err, _req, res) => {
             console.error("api proxy", err.message);

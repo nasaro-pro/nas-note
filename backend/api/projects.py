@@ -108,12 +108,16 @@ async def create_project(
     name = re.sub(r'[<>:"/\\|?*]', "_", raw_name).strip() or "audio"
     if name in {".", ".."}:
         name = "audio"
-    ext = Path(name).suffix.lower()
-    if ext not in ALLOWED:
-        raise HTTPException(400, "MP3, WAV, M4A, MP4, WEBM, OGG만 올릴 수 있습니다.")
-    data = await file.read()
-    if not data:
+    first = await file.read(1024 * 1024)
+    if not first:
         raise HTTPException(400, "파일이 비어 있습니다")
+    ext = store.guess_ext(name, file.content_type, first)
+    if ext not in ALLOWED:
+        raise HTTPException(400, "MP3, WAV, M4A, MP4, MOV, WEBM, OGG만 올릴 수 있습니다.")
+    if not Path(name).suffix:
+        name = f"{name}{ext}"
+    elif Path(name).suffix.lower() != ext:
+        name = f"{Path(name).stem}{ext}"
 
     stem = Path(name).stem
     title = (title or "").strip() or stem
@@ -121,20 +125,28 @@ async def create_project(
     project_id = await db.execute(
         """INSERT INTO projects (title, original_filename, date, rel_dir, file_size, status)
            VALUES (?, ?, ?, '', ?, 'pending')""",
-        (title, name, date, len(data)),
+        (title, name, date, 0),
     )
     rel = store.build_rel_dir(project_id, date, title)
     store.ensure_dirs(rel)
     dest = store.original_dir(rel) / name
-    dest.write_bytes(data)
+    size = len(first)
+    with dest.open("wb") as out:
+        out.write(first)
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            out.write(chunk)
     duration = 0.0
     try:
         duration, size = await asyncio.to_thread(probe, dest)
     except Exception:
-        size = len(data)
+        size = dest.stat().st_size
     await db.execute(
-        "UPDATE projects SET rel_dir=?, duration=?, file_size=?, updated_at=datetime('now') WHERE id=?",
-        (rel, duration, size, project_id),
+        "UPDATE projects SET rel_dir=?, duration=?, file_size=?, original_filename=?, updated_at=datetime('now') WHERE id=?",
+        (rel, duration, size, name, project_id),
     )
     worker.enqueue(project_id)
     return {"id": project_id, "status": "pending"}

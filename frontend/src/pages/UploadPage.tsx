@@ -5,8 +5,8 @@ import { Recorder } from "../components/Recorder";
 import { api } from "../api";
 import { formatBytes } from "../format";
 
-const ACCEPT = ".mp3,.wav,.m4a,.mp4,.webm,.ogg,.weba";
-const FILE_EXT = [".mp3", ".wav", ".m4a", ".mp4", ".webm", ".ogg", ".weba"];
+const ACCEPT = ".mp3,.wav,.m4a,.mp4,.webm,.ogg,.weba,.flac,.mov,.mkv,.aac,.mpeg,.mpg,.3gp";
+const FILE_EXT = ACCEPT.split(",");
 
 type Mode = "choose" | "record" | "file";
 
@@ -44,14 +44,20 @@ export function UploadPage() {
 
   function pick(next: File | null) {
     if (!next) return;
-    const ext = next.name.slice(next.name.lastIndexOf(".")).toLowerCase();
-    if (!FILE_EXT.includes(ext)) {
-      setError("MP3, WAV, M4A, MP4, WEBM, OGG만 올릴 수 있습니다.");
+    const dot = next.name.lastIndexOf(".");
+    const ext = dot >= 0 ? next.name.slice(dot).toLowerCase() : "";
+    const typed = next.type.startsWith("audio/") || next.type.startsWith("video/");
+    if (ext && !FILE_EXT.includes(ext) && !typed) {
+      setError("MP3, WAV, M4A, MP4, MOV, WEBM, OGG만 올릴 수 있습니다.");
+      return;
+    }
+    if (!ext && !typed) {
+      setError("MP3, WAV, M4A, MP4, MOV, WEBM, OGG만 올릴 수 있습니다.");
       return;
     }
     setError("");
     setFile(next);
-    setTitle(next.name.replace(/\.[^.]+$/, ""));
+    setTitle(next.name.replace(/\.[^.]+$/, "") || "새 분석");
   }
 
   function onDrop(e: DragEvent) {
@@ -79,7 +85,7 @@ export function UploadPage() {
       <p className="sub">
         {mode === "record"
           ? "녹음이 끝나면 전사와 요약 정리까지 자동으로 진행됩니다."
-          : "MP3, WAV, M4A, MP4. 업로드 이후 개입 없이 끝까지 진행됩니다."}
+          : "MP3, WAV, M4A, MP4, MOV. 업로드 이후 개입 없이 끝까지 진행됩니다."}
       </p>
       {error ? <p className="err" role="alert">{error}</p> : null}
 

@@ -63,6 +63,8 @@ def _text_from_result(out: object) -> str:
 def _transcribe_sync(path: Path) -> str:
     client = Groq(api_key=settings.groq_api_key.strip(), timeout=600)
     ext = path.suffix.lower() or ".mp3"
+    if ext == ".weba":
+        ext = ".webm"
     data = path.read_bytes()
     out = client.audio.transcriptions.create(
         file=(f"audio{ext}", data),
