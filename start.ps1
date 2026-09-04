@@ -57,23 +57,47 @@ function Test-RealCommand([string]$Name) {
 }
 
 function Get-PythonVersion($info) {
+    $exe = $null
     try {
-        $exe = [string]$info.Exe
-        if (-not $exe) { $exe = [string]$info["Exe"] }
-        if (-not $exe -or ($exe -like "*WindowsApps*")) { return $null }
-        $code = "import sys; print(str(sys.version_info[0]) + chr(46) + str(sys.version_info[1]))"
-        $raw = & $exe -c $code
-        $text = ([string]$raw).Trim().Trim([char]0xFEFF)
-        if ($text -match "(\d+)\.(\d+)") {
-            return [version]($Matches[1] + "." + $Matches[2])
+        if ($info -is [System.Collections.IDictionary]) {
+            $exe = [string]$info["Exe"]
+        } elseif ($null -ne $info) {
+            $exe = [string]$info.Exe
         }
+    } catch {
+        $exe = $null
+    }
+    if (-not $exe -or ($exe -like "*WindowsApps*")) { return $null }
+    if (-not (Test-Path -LiteralPath $exe)) { return $null }
+    try {
+        $code = "import sys; print('%d.%d' % (sys.version_info[0], sys.version_info[1]))"
+        $raw = & $exe -c $code 2>$null | Out-String
+        $text = ([string]$raw).Trim().Trim([char]0xFEFF)
+        $parsed = $null
+        if ($text -match "(\d+)\.(\d+)") {
+            $parsed = [version]($Matches[1] + "." + $Matches[2])
+        }
+        if ($parsed) { return $parsed }
     } catch {}
     return $null
 }
 
+function Test-VersionAtLeast($v, [string]$Min) {
+    try {
+        if ($v -is [System.Array]) {
+            $picked = @($v | Where-Object { $_ -is [version] })
+            if ($picked.Count -lt 1) { return $false }
+            $v = $picked[$picked.Count - 1]
+        }
+        if ($v -isnot [version]) { return $false }
+        return ($v -ge [version]$Min)
+    } catch {
+        return $false
+    }
+}
+
 function Test-PythonNewEnough($info) {
-    $v = Get-PythonVersion $info
-    return $v -and ($v -ge [version]"3.10")
+    return Test-VersionAtLeast (Get-PythonVersion $info) "3.10"
 }
 
 function Add-PythonTry($list, [string]$Exe, $PyArgs) {
@@ -108,7 +132,7 @@ function Find-Python {
     if ($launcher) {
         try {
             $listFile = Join-Path $env:TEMP "nas-note-py0p.txt"
-            $p0 = Start-Process -FilePath $launcher -ArgumentList @("-0p") -Wait -PassThru -WindowStyle Hidden `
+            $p0 = Start-Process -FilePath $launcher -ArgumentList "-0p" -Wait -PassThru -WindowStyle Hidden `
                 -RedirectStandardOutput $listFile -RedirectStandardError "$listFile.err"
             if (Test-Path $listFile) {
                 foreach ($line in Get-Content $listFile -ErrorAction SilentlyContinue) {
@@ -157,16 +181,15 @@ function Find-Python {
         foreach ($ver in Get-ChildItem $regRoot -ErrorAction SilentlyContinue) {
             $ip = Join-Path $ver.PSPath "InstallPath"
             try {
-                $dir = (Get-ItemProperty -Path $ip -ErrorAction SilentlyContinue)."(default)"
+                $dir = [string](Get-ItemProperty -Path $ip -ErrorAction SilentlyContinue)."(default)"
                 if ($dir) { Add-PythonTry $tries (Join-Path $dir "python.exe") @() }
             } catch {}
         }
     }
 
     $hasNew = $false
-    foreach ($info in @($tries)) {
-        $v = Get-PythonVersion $info
-        if ($v -and $v -ge [version]"3.10") { $hasNew = $true; break }
+    foreach ($info in $tries) {
+        if (Test-VersionAtLeast (Get-PythonVersion $info) "3.10") { $hasNew = $true; break }
     }
 
     if (-not $hasNew) {
@@ -195,15 +218,19 @@ function Find-Python {
     $bestVer = [version]"0.0"
     Write-Log "Python 후보 $($tries.Count)개"
     foreach ($info in $tries) {
-        $v = Get-PythonVersion $info
-        if (-not $v) { continue }
-        if ($v -lt [version]"3.10") {
-            Write-Log "오래된 Python $v 건너뜀: $($info.Exe)"
+        try {
+            $v = Get-PythonVersion $info
+            if (-not (Test-VersionAtLeast $v "0.0")) { continue }
+            if (-not (Test-VersionAtLeast $v "3.10")) {
+                Write-Log "오래된 Python $v 건너뜀: $($info.Exe)"
+                continue
+            }
+            if ($v -is [version] -and $v -gt $bestVer) {
+                $best = $info
+                $bestVer = $v
+            }
+        } catch {
             continue
-        }
-        if ($v -gt $bestVer) {
-            $best = $info
-            $bestVer = $v
         }
     }
     return $best
@@ -489,8 +516,8 @@ try {
     $venvPython = Join-Path $venvDir "Scripts\python.exe"
     New-Item -ItemType Directory -Force -Path (Split-Path $venvDir) | Out-Null
     if (Test-Path $venvPython) {
-        $venvVer = Get-PythonVersion @{ Exe = $venvPython; Args = @() }
-        if (-not $venvVer -or $venvVer -lt [version]"3.10") {
+        $venvVer = Get-PythonVersion @{ Exe = $venvPython; PyArgs = @() }
+        if (-not (Test-VersionAtLeast $venvVer "3.10")) {
             Write-Log "가상환경 Python($venvVer)이 오래되어 지우고 다시 만듭니다."
             Remove-Item -Recurse -Force $venvDir -ErrorAction SilentlyContinue
         }
@@ -519,16 +546,21 @@ try {
         $code = "import fastapi,uvicorn,pydantic_settings,aiosqlite,groq,httpx,numpy,sounddevice,dotenv,multipart; from google import genai"
         $out = Join-Path $env:TMP "nas-note-pipcheck.txt"
         $err = "$out.err"
-        $p = Start-Process -FilePath $PythonExe -ArgumentList @("-c", $code) -Wait -PassThru -WindowStyle Hidden `
-            -RedirectStandardOutput $out -RedirectStandardError $err
+        try {
+            $p = Start-Process -FilePath $PythonExe -ArgumentList "-c `"$code`"" -Wait -PassThru -WindowStyle Hidden `
+                -RedirectStandardOutput $out -RedirectStandardError $err
+            $ok = [bool]($p -and $p.ExitCode -eq 0)
+        } catch {
+            $ok = $false
+        }
         Remove-Item $out, $err -ErrorAction SilentlyContinue
-        return $p.ExitCode -eq 0
+        return $ok
     }
     function Invoke-NasNotePip {
         param([string]$PythonExe)
         $venvVer = Get-PythonVersion @{ Exe = $PythonExe; PyArgs = @() }
         Write-Log "pip 설치 (venv Python $venvVer)"
-        if (-not $venvVer -or $venvVer -lt [version]"3.10") { return 99 }
+        if (-not (Test-VersionAtLeast $venvVer "3.10")) { return 99 }
         Copy-Item -LiteralPath $req -Destination $reqAscii -Force
         & $PythonExe -m pip --version 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
