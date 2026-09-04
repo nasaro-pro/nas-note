@@ -163,24 +163,32 @@ function Find-Python {
         }
     }
 
-    foreach ($pySearchRoot in @(
-            "$env:LocalAppData\Python",
-            "$env:LocalAppData\Programs\Python",
-            "$env:ProgramFiles\Python",
-            "${env:ProgramFiles(x86)}\Python"
-        )) {
-        if (-not (Test-Path $pySearchRoot)) { continue }
-        foreach ($hit in Get-ChildItem $pySearchRoot -Filter python.exe -Recurse -ErrorAction SilentlyContinue) {
-            if ($hit.FullName -match "\\Lib\\venv\\") { continue }
-            Add-PythonTry $tries $hit.FullName @()
-        }
+    $hasNew = $false
+    foreach ($info in @($tries)) {
+        $v = Get-PythonVersion $info
+        if ($v -and $v -ge [version]"3.10") { $hasNew = $true; break }
     }
 
-    $wingetRoot = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages"
-    if (Test-Path $wingetRoot) {
-        foreach ($dir in Get-ChildItem $wingetRoot -Directory -Filter "Python.Python.3*" -ErrorAction SilentlyContinue) {
-            $hit = Get-ChildItem $dir.FullName -Filter python.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($hit) { Add-PythonTry $tries $hit.FullName @() }
+    if (-not $hasNew) {
+        foreach ($pySearchRoot in @(
+                "$env:LocalAppData\Python",
+                "$env:LocalAppData\Programs\Python",
+                "$env:ProgramFiles\Python",
+                "${env:ProgramFiles(x86)}\Python"
+            )) {
+            if (-not (Test-Path $pySearchRoot)) { continue }
+            foreach ($hit in Get-ChildItem $pySearchRoot -Filter python.exe -Recurse -ErrorAction SilentlyContinue) {
+                if ($hit.FullName -match "\\Lib\\venv\\") { continue }
+                Add-PythonTry $tries $hit.FullName @()
+            }
+        }
+
+        $wingetRoot = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages"
+        if (Test-Path $wingetRoot) {
+            foreach ($dir in Get-ChildItem $wingetRoot -Directory -Filter "Python.Python.3*" -ErrorAction SilentlyContinue) {
+                $hit = Get-ChildItem $dir.FullName -Filter python.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($hit) { Add-PythonTry $tries $hit.FullName @() }
+            }
         }
     }
     $best = $null
@@ -224,13 +232,38 @@ function Find-Npm {
     return $null
 }
 
+function Get-Sha256File([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return "" }
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
 function Test-Http([string]$Url) {
     try {
-        $r = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2
-        return $r.StatusCode -eq 200
+        $req = [System.Net.HttpWebRequest]::Create($Url)
+        $req.Method = "GET"
+        $req.Timeout = 1500
+        $req.ReadWriteTimeout = 1500
+        $req.Proxy = $null
+        $req.KeepAlive = $false
+        $resp = $req.GetResponse()
+        $code = [int]$resp.StatusCode
+        $resp.Close()
+        return $code -ge 200 -and $code -lt 400
     } catch {
         return $false
     }
+}
+
+function Set-FfmpegEnv([string]$Exe) {
+    if (-not $Exe -or -not (Test-Path -LiteralPath $Exe)) { return }
+    $dir = Split-Path $Exe
+    $env:Path = "$dir;$env:Path"
+    $env:NAS_NOTE_FFMPEG = $Exe
+    $probe = Join-Path $dir "ffprobe.exe"
+    if (Test-Path -LiteralPath $probe) { $env:NAS_NOTE_FFPROBE = $probe }
+    $markerDir = Join-Path $env:LOCALAPPDATA "nas-note"
+    New-Item -ItemType Directory -Force -Path $markerDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $markerDir "ffmpeg-path.txt") -Value $Exe -Encoding ASCII
 }
 
 function Find-Ffmpeg {
@@ -241,8 +274,13 @@ function Find-Ffmpeg {
         "$env:ProgramFiles\ffmpeg\bin\ffmpeg.exe",
         "${env:ProgramFiles(x86)}\ffmpeg\bin\ffmpeg.exe"
     )
+    $stamp = Join-Path $env:LOCALAPPDATA "nas-note\ffmpeg-path.txt"
+    if (Test-Path -LiteralPath $stamp) {
+        $saved = (Get-Content -LiteralPath $stamp -TotalCount 1 -ErrorAction SilentlyContinue)
+        if ($saved) { $roots = @($saved.Trim()) + $roots }
+    }
     foreach ($p in $roots) {
-        if (Test-Path $p) { return $p }
+        if ($p -and (Test-Path -LiteralPath $p)) { return $p }
     }
     $wingetRoot = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages"
     if (Test-Path $wingetRoot) {
@@ -340,8 +378,7 @@ function Ensure-Node {
 function Ensure-Ffmpeg {
     $exe = Find-Ffmpeg
     if ($exe) {
-        $dir = Split-Path $exe
-        $env:Path = "$dir;$env:Path"
+        Set-FfmpegEnv $exe
         Write-Log "FFmpeg: 이미 있음"
         return
     }
@@ -352,9 +389,7 @@ function Ensure-Ffmpeg {
         return
     }
     $exe = Find-Ffmpeg
-    if ($exe) {
-        $env:Path = "$(Split-Path $exe);$env:Path"
-    }
+    if ($exe) { Set-FfmpegEnv $exe }
 }
 
 function Set-DotEnvKey([string]$Path, [string]$Key, [string]$Value) {
@@ -396,20 +431,11 @@ function Ensure-EnvFile {
 }
 
 function Stop-Port([int]$Port) {
-    try {
-        $conns = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-        foreach ($c in $conns) {
-            if ($c.OwningProcess) {
-                Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
-            }
-        }
-    } catch {
-        $lines = netstat -ano | Select-String ":$Port\s.+LISTENING"
-        foreach ($line in $lines) {
-            $procId = ($line.ToString().Trim() -split "\s+")[-1]
-            if ($procId -match "^\d+$") {
-                Stop-Process -Id ([int]$procId) -Force -ErrorAction SilentlyContinue
-            }
+    $lines = netstat -ano | Select-String ":$Port\s.+LISTENING"
+    foreach ($line in $lines) {
+        $procId = ($line.ToString().Trim() -split "\s+")[-1]
+        if ($procId -match "^\d+$") {
+            Stop-Process -Id ([int]$procId) -Force -ErrorAction SilentlyContinue
         }
     }
 }
@@ -484,18 +510,30 @@ try {
     if (-not (Test-Path -LiteralPath $req)) {
         Fail "backend\requirements.txt 가 없습니다. git clone 이 끝난 폴더에서 실행하세요."
     }
+    $reqHash = Get-Sha256File $req
+    $pipStamp = Join-Path $venvDir ".nas-note-req.sha256"
     $reqAscii = Join-Path $env:TMP "nas-note-requirements.txt"
-    Copy-Item -LiteralPath $req -Destination $reqAscii -Force
+
+    function Test-PythonPackages {
+        param([string]$PythonExe)
+        $code = "import fastapi,uvicorn,pydantic_settings,aiosqlite,groq,httpx,numpy,sounddevice,dotenv,multipart; from google import genai"
+        $out = Join-Path $env:TMP "nas-note-pipcheck.txt"
+        $err = "$out.err"
+        $p = Start-Process -FilePath $PythonExe -ArgumentList @("-c", $code) -Wait -PassThru -WindowStyle Hidden `
+            -RedirectStandardOutput $out -RedirectStandardError $err
+        Remove-Item $out, $err -ErrorAction SilentlyContinue
+        return $p.ExitCode -eq 0
+    }
     function Invoke-NasNotePip {
         param([string]$PythonExe)
         $venvVer = Get-PythonVersion @{ Exe = $PythonExe; PyArgs = @() }
-        Write-Log "pip 준비 (venv Python $venvVer)"
+        Write-Log "pip 설치 (venv Python $venvVer)"
         if (-not $venvVer -or $venvVer -lt [version]"3.10") { return 99 }
-        # Native stdout must not enter the function output stream.
-        # Otherwise $pipCode becomes [pip log lines..., 0] and `-ne 0` is always true.
-        & $PythonExe -m ensurepip --upgrade 2>&1 | Out-Host
-        Write-Log "pip 업그레이드"
-        & $PythonExe -m pip install --upgrade pip setuptools wheel --disable-pip-version-check 2>&1 | Out-Host
+        Copy-Item -LiteralPath $req -Destination $reqAscii -Force
+        & $PythonExe -m pip --version 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            & $PythonExe -m ensurepip --upgrade 2>&1 | Out-Host
+        }
         Write-Log "Python 패키지 설치 중..."
         & $PythonExe -m pip install -r $reqAscii --disable-pip-version-check --prefer-binary 2>&1 | Out-Host
         $code = $LASTEXITCODE
@@ -509,33 +547,80 @@ try {
         }
         return [int]$code
     }
-    $pipCode = [int](Invoke-NasNotePip $venvPython)
-    if ($pipCode -ne 0) {
-        Write-Log "패키지 설치 한 번 더 시도 (영문 경로에 가상환경 다시 만듦)"
-        $venvDir = Join-Path $env:LOCALAPPDATA "nas-note\venv-$hash"
-        $venvPython = Join-Path $venvDir "Scripts\python.exe"
-        Remove-Item -Recurse -Force $venvDir -ErrorAction SilentlyContinue
-        New-Item -ItemType Directory -Force -Path (Split-Path $venvDir) | Out-Null
-        $venvCreate = @()
-        if ($py.PyArgs) { $venvCreate += @($py.PyArgs) }
-        $venvCreate += @("-m", "venv", $venvDir)
-        & $py.Exe @venvCreate
-        $pipCode = [int](Invoke-NasNotePip $venvPython)
+
+    $needPip = $true
+    $stampOk = $false
+    if (Test-Path -LiteralPath $pipStamp) {
+        $prevHash = (Get-Content -LiteralPath $pipStamp -Raw -ErrorAction SilentlyContinue)
+        if ($prevHash -and $prevHash.Trim() -eq $reqHash) { $stampOk = $true }
     }
-    if ($pipCode -ne 0) {
-        Fail "Python 패키지 설치 실패 (코드 $pipCode). 위 pip 에러를 확인하세요."
+    $importsOk = Test-PythonPackages $venvPython
+    if ($importsOk -and ($stampOk -or -not (Test-Path -LiteralPath $pipStamp))) {
+        $needPip = $false
+        Write-Log "Python 패키지: 이미 설치됨"
+        if (-not $stampOk) {
+            Set-Content -LiteralPath $pipStamp -Value $reqHash -Encoding ASCII
+        }
+    }
+
+    $pipCode = 0
+    if ($needPip) {
+        $pipCode = [int](Invoke-NasNotePip $venvPython)
+        if ($pipCode -ne 0) {
+            Write-Log "패키지 설치 한 번 더 시도 (영문 경로에 가상환경 다시 만듦)"
+            $venvDir = Join-Path $env:LOCALAPPDATA "nas-note\venv-$hash"
+            $venvPython = Join-Path $venvDir "Scripts\python.exe"
+            $pipStamp = Join-Path $venvDir ".nas-note-req.sha256"
+            Remove-Item -Recurse -Force $venvDir -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path (Split-Path $venvDir) | Out-Null
+            $venvCreate = @()
+            if ($py.PyArgs) { $venvCreate += @($py.PyArgs) }
+            $venvCreate += @("-m", "venv", $venvDir)
+            & $py.Exe @venvCreate
+            $pipCode = [int](Invoke-NasNotePip $venvPython)
+        }
+        if ($pipCode -ne 0) {
+            Fail "Python 패키지 설치 실패 (코드 $pipCode). 위 pip 에러를 확인하세요."
+        }
+        Set-Content -LiteralPath $pipStamp -Value $reqHash -Encoding ASCII
     }
 
     Refresh-Path
+    $ffNow = Find-Ffmpeg
+    if ($ffNow) { Set-FfmpegEnv $ffNow }
+
     $npm = Find-Npm
     if (-not $npm) { Fail "npm을 찾지 못했습니다. start.ps1을 한 번 더 실행하세요." }
     $nodeDir = Split-Path $npm
     $env:Path = "$nodeDir;$env:Path"
 
     $feDir = Join-Path $Root "frontend"
-    Write-Log "Node 패키지 설치 중..."
-    $npmInstall = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", "`"$npm`" install") -WorkingDirectory $feDir -Wait -PassThru -NoNewWindow
-    if ($npmInstall.ExitCode -ne 0) { Fail "npm install 실패" }
+    $lockFile = Join-Path $feDir "package-lock.json"
+    $pkgFile = Join-Path $feDir "package.json"
+    $npmStamp = Join-Path $feDir "node_modules\.nas-note-lock.sha256"
+    $npmHash = (Get-Sha256File $lockFile) + "|" + (Get-Sha256File $pkgFile)
+    $viteOk = Test-Path (Join-Path $feDir "node_modules\vite\package.json")
+    $reactOk = Test-Path (Join-Path $feDir "node_modules\react\package.json")
+    $npmStampOk = $false
+    if (Test-Path -LiteralPath $npmStamp) {
+        $prevNpm = (Get-Content -LiteralPath $npmStamp -Raw -ErrorAction SilentlyContinue)
+        if ($prevNpm -and $prevNpm.Trim() -eq $npmHash) { $npmStampOk = $true }
+    }
+    if (($npmStampOk -or -not (Test-Path -LiteralPath $npmStamp)) -and $viteOk -and $reactOk) {
+        Write-Log "Node 패키지: 이미 설치됨"
+        if (-not $npmStampOk) {
+            New-Item -ItemType Directory -Force -Path (Join-Path $feDir "node_modules") | Out-Null
+            Set-Content -LiteralPath $npmStamp -Value $npmHash -Encoding ASCII
+        }
+    } else {
+        Write-Log "Node 패키지 설치 중..."
+        $npmInstall = Start-Process -FilePath "cmd.exe" `
+            -ArgumentList @("/c", "`"$npm`" install --no-audit --no-fund --prefer-offline") `
+            -WorkingDirectory $feDir -Wait -PassThru -NoNewWindow
+        if ($npmInstall.ExitCode -ne 0) { Fail "npm install 실패" }
+        New-Item -ItemType Directory -Force -Path (Join-Path $feDir "node_modules") | Out-Null
+        Set-Content -LiteralPath $npmStamp -Value $npmHash -Encoding ASCII
+    }
 
     Stop-Port 8000
     Stop-Port 5173

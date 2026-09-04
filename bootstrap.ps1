@@ -81,11 +81,7 @@ if (-not $git) {
 $hasStart = Test-Path -LiteralPath (Join-Path $Root "start.ps1")
 $hasGitDir = Test-Path -LiteralPath (Join-Path $Root ".git")
 
-if ($hasStart -and $hasGitDir -and $git) {
-    Write-Host "최신 코드로 맞춥니다."
-    & $git -C $Root fetch origin
-    & $git -C $Root reset --hard origin/main
-} elseif (-not $hasStart) {
+if (-not $hasStart) {
     if ($git) {
         Write-Host "GitHub에서 코드를 받습니다."
         & $git clone $RepoGit .
@@ -96,6 +92,8 @@ if ($hasStart -and $hasGitDir -and $git) {
     } else {
         Get-CodeFromZip
     }
+} elseif ($hasGitDir -and $git) {
+    Write-Host "로컬 코드로 시작합니다. (업데이트는 git pull)"
 }
 
 $start = Join-Path $Root "start.ps1"

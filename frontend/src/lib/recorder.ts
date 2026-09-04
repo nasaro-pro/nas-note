@@ -141,13 +141,25 @@ export async function openMicrophone(preferredId?: string): Promise<MediaStream>
     ? mics.find((m) => !isVirtualMicId(m.deviceId))?.deviceId
     : preferredId;
 
-  const attempts: MediaStreamConstraints[] = [
-    { audio: RAW_AUDIO },
-    { audio: true },
-  ];
+  const attempts: MediaStreamConstraints[] = [];
   if (hardwareId) {
-    attempts.unshift({ audio: { ...RAW_AUDIO, deviceId: { ideal: hardwareId } } });
+    attempts.push({ audio: { ...RAW_AUDIO, deviceId: { exact: hardwareId } } });
+    attempts.push({ audio: { ...RAW_AUDIO, deviceId: { ideal: hardwareId } } });
+    attempts.push({
+      audio: {
+        deviceId: { ideal: hardwareId },
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    attempts.push({ audio: { deviceId: { ideal: hardwareId } } });
   }
+  attempts.push({ audio: RAW_AUDIO });
+  attempts.push({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  attempts.push({ audio: true });
 
   let last: unknown;
   for (const constraints of attempts) {
@@ -155,7 +167,7 @@ export async function openMicrophone(preferredId?: string): Promise<MediaStream>
       return await gum(constraints);
     } catch (err) {
       last = err;
-      await sleep(250);
+      await sleep(80);
     }
   }
   throw last ?? new DOMException("Could not start audio source", "NotReadableError");

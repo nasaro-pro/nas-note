@@ -11,9 +11,147 @@ from pathlib import Path
 
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
+_ffmpeg_ok_cache: bool | None = None
+_ffmpeg_bin: str | None = None
+_ffprobe_bin: str | None = None
+
 
 class FFmpegError(Exception):
     pass
+
+
+def _exe_name(name: str) -> str:
+    return f"{name}.exe" if sys.platform == "win32" else name
+
+
+def _stamp_dir() -> Path | None:
+    raw = os.environ.get("LOCALAPPDATA") or os.environ.get("HOME")
+    if not raw:
+        return None
+    return Path(raw) / "nas-note"
+
+
+def _from_env(name: str) -> list[Path]:
+    keys = {
+        "ffmpeg": ("NAS_NOTE_FFMPEG", "FFMPEG_BINARY", "FFMPEG_PATH"),
+        "ffprobe": ("NAS_NOTE_FFPROBE", "FFPROBE_BINARY", "FFPROBE_PATH"),
+    }
+    out: list[Path] = []
+    for key in keys.get(name, ()):
+        raw = (os.environ.get(key) or "").strip().strip('"')
+        if not raw:
+            continue
+        p = Path(raw)
+        if p.is_file():
+            out.append(p)
+            if name == "ffprobe" and p.stem.lower().startswith("ffmpeg"):
+                sibling = p.with_name(_exe_name("ffprobe"))
+                if sibling.exists():
+                    out.append(sibling)
+            continue
+        if p.is_dir():
+            cand = p / _exe_name(name)
+            if cand.exists():
+                out.append(cand)
+    return out
+
+
+def _common_bins(name: str) -> list[Path]:
+    exe = _exe_name(name)
+    dirs: list[Path] = []
+    stamp = _stamp_dir()
+    if stamp:
+        marker = stamp / "ffmpeg-path.txt"
+        if marker.is_file():
+            try:
+                line = marker.read_text(encoding="utf-8").strip().strip('"')
+            except OSError:
+                line = ""
+            if line:
+                p = Path(line)
+                dirs.append(p.parent if p.is_file() else p)
+        dirs.append(stamp)
+    dirs.extend(
+        [
+            Path(r"C:\ffmpeg\bin"),
+            Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "ffmpeg" / "bin",
+            Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "ffmpeg" / "bin",
+            Path("/usr/bin"),
+            Path("/usr/local/bin"),
+            Path("/opt/homebrew/bin"),
+        ]
+    )
+    out = [d / exe for d in dirs]
+    which = shutil.which(name)
+    if which:
+        out.insert(0, Path(which))
+    winget = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
+    if winget.is_dir():
+        try:
+            for pkg in winget.glob("Gyan.FFmpeg*"):
+                hits = list(pkg.rglob(exe))
+                if hits:
+                    out.append(hits[0])
+                    break
+        except OSError:
+            pass
+    return out
+
+
+def _works(path: Path) -> bool:
+    try:
+        if not path.is_file():
+            return False
+        r = subprocess.run(
+            [str(path), "-version"],
+            capture_output=True,
+            creationflags=CREATE_NO_WINDOW,
+            timeout=8,
+        )
+        return r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _resolve(name: str) -> str | None:
+    seen: set[str] = set()
+    for cand in [*_from_env(name), *_common_bins(name)]:
+        key = str(cand).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if _works(cand):
+            return str(cand)
+    return None
+
+
+def ffmpeg_bin() -> str | None:
+    global _ffmpeg_bin
+    if _ffmpeg_bin:
+        return _ffmpeg_bin
+    _ffmpeg_bin = _resolve("ffmpeg")
+    if _ffmpeg_bin:
+        ffdir = str(Path(_ffmpeg_bin).parent)
+        os.environ["PATH"] = ffdir + os.pathsep + os.environ.get("PATH", "")
+        os.environ["NAS_NOTE_FFMPEG"] = _ffmpeg_bin
+    return _ffmpeg_bin
+
+
+def ffprobe_bin() -> str | None:
+    global _ffprobe_bin
+    if _ffprobe_bin:
+        return _ffprobe_bin
+    ff = ffmpeg_bin()
+    if ff:
+        sibling = Path(ff).with_name(_exe_name("ffprobe"))
+        if _works(sibling):
+            _ffprobe_bin = str(sibling)
+            os.environ["NAS_NOTE_FFPROBE"] = _ffprobe_bin
+            return _ffprobe_bin
+    _ffprobe_bin = _resolve("ffprobe")
+    if _ffprobe_bin:
+        os.environ["NAS_NOTE_FFPROBE"] = _ffprobe_bin
+    return _ffprobe_bin
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -76,18 +214,21 @@ def _ascii_pair(src: Path, out_name: str):
 
 
 def ffmpeg_ok() -> bool:
-    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
-        return False
-    a = _run(["ffmpeg", "-version"])
-    b = _run(["ffprobe", "-version"])
-    return a.returncode == 0 and b.returncode == 0
+    global _ffmpeg_ok_cache
+    if _ffmpeg_ok_cache is not None:
+        return _ffmpeg_ok_cache
+    _ffmpeg_ok_cache = bool(ffmpeg_bin() and ffprobe_bin())
+    return _ffmpeg_ok_cache
 
 
 def probe(path: Path) -> tuple[float, int]:
+    probe_bin = ffprobe_bin()
+    if not probe_bin:
+        raise FFmpegError("ffprobe가 없습니다. start.bat을 다시 실행하세요.")
     with _ascii_input(path) as inn:
         r = _run(
             [
-                "ffprobe",
+                probe_bin,
                 "-v",
                 "quiet",
                 "-print_format",
@@ -105,9 +246,12 @@ def probe(path: Path) -> tuple[float, int]:
 
 
 def convert_to_flac(src: Path, dest: Path) -> None:
+    ff = ffmpeg_bin()
+    if not ff:
+        raise FFmpegError("FFmpeg가 없습니다. start.bat을 다시 실행하세요.")
     dest.parent.mkdir(parents=True, exist_ok=True)
     with _ascii_pair(src, "out.flac") as (inn, out, _td):
-        common = ["ffmpeg", "-y", "-i", str(inn), "-vn", "-ar", "16000", "-ac", "1", "-c:a", "flac"]
+        common = [ff, "-y", "-i", str(inn), "-vn", "-ar", "16000", "-ac", "1", "-c:a", "flac"]
         r = _run([*common, "-map", "0:a:0", str(out)])
         if r.returncode != 0 or not out.exists():
             out.unlink(missing_ok=True)
@@ -118,9 +262,12 @@ def convert_to_flac(src: Path, dest: Path) -> None:
 
 
 def cut_segment(src: Path, dest: Path, start: float, duration: float | None = None) -> None:
+    ff = ffmpeg_bin()
+    if not ff:
+        raise FFmpegError("FFmpeg가 없습니다. start.bat을 다시 실행하세요.")
     dest.parent.mkdir(parents=True, exist_ok=True)
     with _ascii_pair(src, "out.flac") as (inn, out, _td):
-        args = ["ffmpeg", "-y", "-ss", f"{start:.3f}", "-i", str(inn)]
+        args = [ff, "-y", "-ss", f"{start:.3f}", "-i", str(inn)]
         if duration is not None:
             args += ["-t", f"{duration:.3f}"]
         args += ["-c:a", "flac", "-ar", "16000", "-ac", "1", str(out)]
@@ -131,11 +278,14 @@ def cut_segment(src: Path, dest: Path, start: float, duration: float | None = No
 
 
 def segment_by_time(src: Path, dest_dir: Path, target_sec: float) -> list[Path]:
+    ff = ffmpeg_bin()
+    if not ff:
+        raise FFmpegError("FFmpeg가 없습니다. start.bat을 다시 실행하세요.")
     dest_dir.mkdir(parents=True, exist_ok=True)
     with _ascii_pair(src, "seg_%04d.flac") as (inn, pattern, td):
         r = _run(
             [
-                "ffmpeg",
+                ff,
                 "-y",
                 "-i",
                 str(inn),
@@ -162,7 +312,7 @@ def segment_by_time(src: Path, dest_dir: Path, target_sec: float) -> list[Path]:
         doubled = td / "seg_%%04d.flac"
         r = _run(
             [
-                "ffmpeg",
+                ff,
                 "-y",
                 "-i",
                 str(inn),
